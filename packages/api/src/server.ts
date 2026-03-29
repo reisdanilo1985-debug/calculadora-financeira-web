@@ -1,0 +1,56 @@
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import rateLimit from 'express-rate-limit';
+import { calculateRouter } from './routes/calculate';
+import { indicesRouter } from './routes/indices';
+import logger from './middleware/logger';
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+// Middlewares
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  credentials: true,
+}));
+
+app.use(express.json({ limit: '1mb' }));
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Muitas requisições. Tente novamente em 15 minutos.' },
+});
+
+app.use('/api', limiter);
+
+// Rotas
+app.use('/api/calcular', calculateRouter);
+app.use('/api/indices', indicesRouter);
+
+// Health check
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// 404 handler
+app.use((_req, res) => {
+  res.status(404).json({ error: 'Rota não encontrada' });
+});
+
+// Error handler
+app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  logger.error('Erro não tratado:', err);
+  res.status(500).json({ error: 'Erro interno do servidor' });
+});
+
+app.listen(PORT, () => {
+  logger.info(`Servidor rodando em http://localhost:${PORT}`);
+  logger.info(`Ambiente: ${process.env.NODE_ENV || 'development'}`);
+});
+
+export default app;
