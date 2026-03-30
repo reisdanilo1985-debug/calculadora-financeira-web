@@ -198,4 +198,58 @@ export async function checkPremisesRequired(
   return data;
 }
 
+// ── Comparador de Cenários ──────────────────────────────────────────────────
+
+export interface CompareScenarioInput {
+  label: string;
+  indexType: string;
+  dayCountBasis: number;
+  prefixedRate?: number;
+  spread?: { mode: 'percentage' | 'additive'; value: number; additiveBase?: number };
+  futurePremises?: { startDate: string; endDate: string; rate: number }[];
+}
+
+export interface CompareScenarioPoint {
+  date: string;
+  variationPct: number;
+  isProjected: boolean;
+}
+
+export interface CompareScenarioResult {
+  label: string;
+  indexType: string;
+  finalAmount?: number;
+  variationPercent?: number;
+  accumulatedFactor?: number;
+  hasProjections?: boolean;
+  points?: CompareScenarioPoint[];
+  warning?: string;
+  error?: string;
+  premisesRequiredFrom?: string;
+  lastAvailableDate?: string;
+  lastAvailableRate?: number;
+}
+
+export interface CompareRequest {
+  initialAmount: number;
+  startDate: string;
+  endDate: string;
+  currency?: string;
+  scenarios: CompareScenarioInput[];
+}
+
+export interface CompareResult {
+  initialAmount: number;
+  startDate: string;
+  endDate: string;
+  currency: string;
+  scenarios: CompareScenarioResult[];
+}
+
+/** Executa uma comparação de múltiplos cenários */
+export async function runComparison(request: CompareRequest): Promise<CompareResult> {
+  const { data } = await api.post<CompareResult>('/comparar/cenarios', request);
+  return data;
+}
+
 export default api;

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BarChart3, Settings, TrendingUp, ShieldCheck, Database, Globe, HelpCircle, X, BarChart2 } from 'lucide-react';
+import { BarChart3, Settings, TrendingUp, ShieldCheck, Database, Globe, HelpCircle, X, BarChart2, GitCompare } from 'lucide-react';
 import { CalculatorForm } from '@/components/calculator/CalculatorForm';
 import { ResultsSummary } from '@/components/results/ResultsSummary';
 import { EvolutionChart } from '@/components/results/EvolutionChart';
@@ -7,9 +7,11 @@ import { MemoryTable } from '@/components/results/MemoryTable';
 import { ExportButtons } from '@/components/results/ExportButtons';
 import { FullFlowTable } from '@/components/results/FullFlowTable';
 import { IndexAdmin } from '@/components/admin/IndexAdmin';
+import { ComparadorForm } from '@/components/comparador/ComparadorForm';
+import { ComparadorResult } from '@/components/comparador/ComparadorResult';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CalculationResult } from '@/lib/api';
+import { CalculationResult, CompareResult } from '@/lib/api';
 
 const HELP_STEPS = [
   { step: '1', text: 'Selecione o indexador de correção (CDI, IPCA, Selic…)' },
@@ -86,6 +88,7 @@ function HelpPopover({ onClose }: { onClose: () => void }) {
 
 export function HomePage() {
   const [result, setResult] = useState<CalculationResult | null>(null);
+  const [compareResult, setCompareResult] = useState<CompareResult | null>(null);
   const [activeTab, setActiveTab] = useState('calculadora');
   const [showHelp, setShowHelp] = useState(false);
 
@@ -170,6 +173,13 @@ export function HomePage() {
                   Calculadora
                 </TabsTrigger>
                 <TabsTrigger
+                  value="comparador"
+                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm gap-1.5"
+                >
+                  <GitCompare className="h-3.5 w-3.5" />
+                  Comparador
+                </TabsTrigger>
+                <TabsTrigger
                   value="indices"
                   className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm gap-1.5"
                 >
@@ -252,6 +262,46 @@ export function HomePage() {
                   </div>
                 ) : (
                   <EmptyResultsPanel onHelp={() => setShowHelp(true)} />
+                )}
+              </section>
+            </div>
+          </TabsContent>
+
+          {/* Tab: Comparador */}
+          <TabsContent value="comparador" className="flex-1 m-0 data-[state=active]:flex flex-col">
+            <div className="flex-1 grid grid-cols-1 lg:grid-cols-[400px_1fr] max-w-[1600px] mx-auto w-full">
+              <aside className="border-r border-white/5 overflow-y-auto bg-card/20 backdrop-blur-sm relative glass-panel mb-0 rounded-none border-y-0 border-l-0">
+                <div className="p-5">
+                  <ComparadorForm onResult={r => { setCompareResult(r); }} />
+                </div>
+              </aside>
+              <section className="overflow-y-auto bg-transparent relative">
+                {compareResult ? (
+                  <div className="p-6 space-y-4 animate-slide-in-right">
+                    <div>
+                      <h2 className="text-base font-semibold text-foreground">Comparação de Cenários</h2>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {compareResult.scenarios.filter(s => !s.error).length} cenários calculados · Montante base:{' '}
+                        <span className="font-mono text-foreground/80">
+                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(compareResult.initialAmount)}
+                        </span>
+                      </p>
+                    </div>
+                    <ComparadorResult result={compareResult} />
+                  </div>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center py-20 px-8 text-center gap-4">
+                    <div className="rounded-full bg-primary/10 border border-primary/20 p-5">
+                      <GitCompare className="h-10 w-10 text-primary/60" />
+                    </div>
+                    <div>
+                      <p className="text-base font-medium text-foreground/80">Nenhuma comparação realizada</p>
+                      <p className="text-sm text-muted-foreground mt-1 max-w-xs">
+                        Configure os cenários ao lado e clique em{' '}
+                        <span className="text-primary font-medium">Comparar Cenários</span>.
+                      </p>
+                    </div>
+                  </div>
                 )}
               </section>
             </div>
