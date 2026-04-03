@@ -280,6 +280,32 @@ export enum Currency {
   BRL = 'BRL',
   USD = 'USD',
   EUR = 'EUR',
+  GBP = 'GBP',
+  JPY = 'JPY',
+  CHF = 'CHF',
+  CNY = 'CNY',
+}
+
+/** Representa um ponto de dado histórico de câmbio */
+export interface ExchangeRatePoint {
+  date: Date;
+  /** Valor de fechamento para Venda (Sell Rate) em relação ao BRL (R$) */
+  buyValue?: number;
+  sellValue: number;
+}
+
+/** Métricas sumarizadas de um período para uma moeda */
+export interface ExchangeSummaryMetrics {
+  currency: Currency;
+  periodStart: Date;
+  periodEnd: Date;
+  averageRate: number;
+  minRate: number;
+  minRateDate: Date;
+  maxRate: number;
+  maxRateDate: Date;
+  /** Taxa cruzada média em relação ao Dólar (USD) no período */
+  crossRateUSD?: number;
 }
 
 /** Fluxo de caixa para Valor Presente (T2) */

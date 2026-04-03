@@ -9,6 +9,7 @@ import { FullFlowTable } from '@/components/results/FullFlowTable';
 import { IndexAdmin } from '@/components/admin/IndexAdmin';
 import { ComparadorForm } from '@/components/comparador/ComparadorForm';
 import { ComparadorResult } from '@/components/comparador/ComparadorResult';
+import { ExchangePanel } from '@/components/exchange/ExchangePanel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CalculationResult, CompareResult } from '@/lib/api';
@@ -186,6 +187,13 @@ export function HomePage() {
                   <Settings className="h-3.5 w-3.5" />
                   Índices
                 </TabsTrigger>
+                <TabsTrigger
+                  value="cambio"
+                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm gap-1.5"
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  Câmbio
+                </TabsTrigger>
               </TabsList>
             </div>
           </div>
@@ -310,6 +318,11 @@ export function HomePage() {
           {/* Tab: Índices */}
           <TabsContent value="indices" className="m-0 p-6 max-w-[1600px] mx-auto w-full">
             <IndexAdmin />
+          </TabsContent>
+
+          {/* Tab: Câmbio */}
+          <TabsContent value="cambio" className="flex-1 m-0 data-[state=active]:flex flex-col">
+            <ExchangePanel />
           </TabsContent>
 
         </Tabs>

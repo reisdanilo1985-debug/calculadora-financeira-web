@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import { calculateRouter } from './routes/calculate';
 import { indicesRouter } from './routes/indices';
 import { compareRouter } from './routes/compare';
+import { exchangeRouter } from './routes/exchange';
 import logger from './middleware/logger';
 
 const app = express();
@@ -33,6 +34,7 @@ app.use('/api', limiter);
 app.use('/api/calcular', calculateRouter);
 app.use('/api/indices', indicesRouter);
 app.use('/api/comparar', compareRouter);
+app.use('/api/exchange', exchangeRouter);
 
 // Health check
 app.get('/health', (_req, res) => {

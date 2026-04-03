@@ -252,4 +252,48 @@ export async function runComparison(request: CompareRequest): Promise<CompareRes
   return data;
 }
 
+// ── Câmbio e Moedas ──────────────────────────────────────────────────────────
+
+export interface ExchangeRateData {
+  currency: string;
+  count: number;
+  data: { date: string; sellValue: number }[];
+}
+
+export interface ExchangeSummaryData {
+  currency: string;
+  periodStart: string;
+  periodEnd: string;
+  averageRate: number;
+  minRate: number;
+  minRateDate: string;
+  maxRate: number;
+  maxRateDate: string;
+  crossRateUSD?: number;
+}
+
+/** Busca histórico de câmbio */
+export async function getExchangeRates(
+  currencies: string[],
+  startDate: string,
+  endDate: string
+): Promise<ExchangeRateData[]> {
+  const { data } = await api.get<ExchangeRateData[]>('/exchange/rates', {
+    params: { currencies: currencies.join(','), startDate, endDate },
+  });
+  return data;
+}
+
+/** Busca sumário do câmbio no período */
+export async function getExchangeSummary(
+  currencies: string[],
+  startDate: string,
+  endDate: string
+): Promise<ExchangeSummaryData[]> {
+  const { data } = await api.get<ExchangeSummaryData[]>('/exchange/summary', {
+    params: { currencies: currencies.join(','), startDate, endDate },
+  });
+  return data;
+}
+
 export default api;
