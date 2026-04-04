@@ -296,4 +296,19 @@ export async function getExchangeSummary(
   return data;
 }
 
+export interface MarketAsset {
+  symbol: string;
+  name: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  currency: string;
+}
+
+/** Busca cotações on-line de mercado */
+export async function getMarketPulse(): Promise<MarketAsset[]> {
+  const { data } = await api.get<MarketAsset[]>('/market/pulse');
+  return data;
+}
+
 export default api;

@@ -285,7 +285,13 @@ export function getPremisesRequiredFrom(
     indexData[0].date
   );
 
-  if (endDate <= lastDataDate) return null;
+  // endDate é exclusiva nos cálculos (getBusinessDaysBetween e buildMonthSegments
+  // iteram `while (current < endDate)`), portanto o último dia efetivamente
+  // calculado é endDate - 1. Premissas só são necessárias se (endDate - 1) > lastDataDate.
+  const lastNeededDate = new Date(endDate);
+  lastNeededDate.setDate(lastNeededDate.getDate() - 1);
+
+  if (lastNeededDate <= lastDataDate) return null;
 
   const nextDay = new Date(lastDataDate);
   nextDay.setDate(nextDay.getDate() + 1);

@@ -6,13 +6,15 @@ import { EvolutionChart } from '@/components/results/EvolutionChart';
 import { MemoryTable } from '@/components/results/MemoryTable';
 import { ExportButtons } from '@/components/results/ExportButtons';
 import { FullFlowTable } from '@/components/results/FullFlowTable';
-import { IndexAdmin } from '@/components/admin/IndexAdmin';
 import { ComparadorForm } from '@/components/comparador/ComparadorForm';
 import { ComparadorResult } from '@/components/comparador/ComparadorResult';
+import { IndexAdmin } from '@/components/admin/IndexAdmin';
 import { ExchangePanel } from '@/components/exchange/ExchangePanel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CalculationResult, CompareResult } from '@/lib/api';
+import { LandingPage } from './LandingPage';
+import { LiveTickerBar } from '@/components/dashboard/LiveTickerBar';
 
 const HELP_STEPS = [
   { step: '1', text: 'Selecione o indexador de correção (CDI, IPCA, Selic…)' },
@@ -92,254 +94,204 @@ export function HomePage() {
   const [compareResult, setCompareResult] = useState<CompareResult | null>(null);
   const [activeTab, setActiveTab] = useState('calculadora');
   const [showHelp, setShowHelp] = useState(false);
+  const [view, setView] = useState<'landing' | 'app'>('landing');
 
   const handleResult = (r: CalculationResult) => {
     setResult(r);
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col relative overflow-hidden">
-      {/* ── Background Decorativo Metálico/Glass ── */}
-      <div className="absolute top-0 right-1/4 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[120px] pointer-events-none mix-blend-screen" />
-      <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] bg-secondary/20 rounded-full blur-[120px] pointer-events-none mix-blend-screen" />
+    <div className="min-h-screen bg-background flex flex-col relative">
+      {/* ── Background Decorativo ── */}
+      <div className="fixed top-0 right-1/4 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[120px] pointer-events-none mix-blend-screen" />
+      <div className="fixed bottom-[-10%] left-[-10%] w-[600px] h-[600px] bg-secondary/20 rounded-full blur-[120px] pointer-events-none mix-blend-screen" />
+
+
+      {/* ── Cabeçalho Fixo: Cotações + Navbar ── */}
+      <div className="fixed top-0 left-0 right-0 z-50">
+        {/* ── Cotações em Tempo Real (global) ── */}
+        <LiveTickerBar />
       
-      {/* ── Barra de navegação ── */}
-      <header className="border-b border-white/5 bg-background/40 backdrop-blur-xl sticky top-0 z-40">
-        <div className="max-w-[1600px] mx-auto h-12 flex items-center justify-between px-6">
-          <div className="flex items-center gap-2.5">
-            <TrendingUp className="h-4 w-4 text-primary" />
-            <span className="font-bold text-sm text-foreground tracking-tight">Correção Financeira</span>
-            <span className="text-[10px] text-muted-foreground italic hidden sm:inline">by Danilo dos Reis</span>
-          </div>
-          <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
-            <span className="hidden md:flex items-center gap-1.5">
-              <ShieldCheck className="h-3 w-3 text-primary/60" />
-              BCB · IBGE · FGV · FRED
-            </span>
-          </div>
+        {/* ── Navbar Global ── */}
+        <header className="border-b border-white/5 bg-background/80 backdrop-blur-xl">
+        <div className="max-w-[1600px] mx-auto h-16 flex items-center justify-between px-6">
+          <button onClick={() => setView('landing')} className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
+            <TrendingUp className="h-5 w-5 text-primary" />
+            <span className="font-bold text-lg text-foreground tracking-tight">Correção Financeira</span>
+          </button>
+          
+          <nav className="hidden md:flex items-center gap-8">
+            <button 
+              onClick={() => { setView('app'); setActiveTab('calculadora'); }} 
+              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${view === 'app' && activeTab === 'calculadora' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Calculadora
+            </button>
+            <button 
+              onClick={() => { setView('app'); setActiveTab('comparador'); }} 
+              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${view === 'app' && activeTab === 'comparador' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Comparador
+            </button>
+            <button 
+              onClick={() => { setView('app'); setActiveTab('cambio'); }} 
+              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${view === 'app' && activeTab === 'cambio' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Câmbio
+            </button>
+            <button 
+              onClick={() => { setView('app'); setActiveTab('indices'); }} 
+              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${view === 'app' && activeTab === 'indices' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Índices/Admin
+            </button>
+          </nav>
         </div>
       </header>
+      </div>
 
-      {/* ── Hero Banner ── */}
-      <div className="relative overflow-hidden flex-shrink-0" style={{ height: '200px' }}>
-        <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-20"
-          style={{ backgroundImage: "url('/bg-financeiro.jpg')" }}
-        />
-        <div className="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
-        <div className="relative z-10 h-full flex flex-col justify-center px-8 max-w-[1600px] mx-auto">
-          <p className="text-[10px] font-semibold text-primary uppercase tracking-[0.2em] mb-2">
-            Ferramenta Profissional
-          </p>
-          <h1 className="text-3xl md:text-4xl font-bold text-foreground">
-            Correção Financeira
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            <span className="italic">by </span>
-            <span className="font-semibold text-foreground/70">Danilo dos Reis</span>
-          </p>
-          <p className="text-xs text-muted-foreground mt-2 max-w-lg">
-            Calculadora monetária profissional com dados oficiais em tempo real.
-            Precisão decimal arbitrária para contratos e operações financeiras.
-          </p>
-          <div className="flex flex-wrap gap-2 mt-3">
-            {[
-              { icon: Database, text: 'Cache BCB em tempo real' },
-              { icon: ShieldCheck, text: 'Precisão decimal arbitrária' },
-              { icon: Globe, text: 'CDI · Selic · IPCA · IGP-M · INCC · SOFR' },
-            ].map(({ icon: Icon, text }) => (
-              <span key={text} className="inline-flex items-center gap-1 text-[10px] bg-primary/10 border border-primary/20 text-primary rounded-full px-2.5 py-0.5">
-                <Icon className="h-2.5 w-2.5" />
-                {text}
-              </span>
-            ))}
-          </div>
+      {/* ── Espaçador para compensar cabeçalho fixo (ticker 28px + navbar 64px) ── */}
+      <div className="h-[92px] shrink-0" />
+
+      {/* ── View Control ── */}
+      {view === 'landing' ? (
+        <LandingPage onNavigate={(tab) => { setView('app'); setActiveTab(tab); }} />
+      ) : (
+        <div className="flex-1 flex flex-col relative z-10 bg-black/20">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+            
+            {/* Tab: Calculadora */}
+            <TabsContent value="calculadora" className="flex-1 m-0 data-[state=active]:flex flex-col">
+              <div className="flex-1 grid grid-cols-1 lg:grid-cols-[400px_1fr] max-w-[1600px] mx-auto w-full">
+                <aside className="border-r border-white/5 overflow-y-auto bg-card/20 backdrop-blur-sm relative glass-panel mb-0 rounded-none border-y-0 border-l-0">
+                  <div className="p-5 relative">
+                    <div className="absolute top-5 right-5 z-10">
+                      <button
+                        onClick={() => setShowHelp(v => !v)}
+                        title="Como usar"
+                        className="text-muted-foreground hover:text-primary p-1 rounded transition-colors"
+                      >
+                        <HelpCircle className="h-4 w-4" />
+                      </button>
+                      {showHelp && <HelpPopover onClose={() => setShowHelp(false)} />}
+                    </div>
+                    <CalculatorForm onResult={handleResult} />
+                  </div>
+                </aside>
+
+                <section className="overflow-y-auto bg-transparent relative">
+                  {result ? (
+                    <div className="p-6 space-y-6 animate-slide-in-right">
+                      <ResultsSummary result={result} />
+                      <Card className="glass-card">
+                        <CardHeader className="pb-3 border-b border-white/5">
+                          <CardTitle className="text-sm font-semibold flex items-center gap-2 text-muted-foreground tracking-wide">
+                            <BarChart3 className="h-4 w-4 text-primary" />
+                            Evolução do Saldo
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="pt-4">
+                          <EvolutionChart result={result} />
+                        </CardContent>
+                      </Card>
+
+                      {result.thesisType === 'FLUXO_COMPLETO' && result.fullFlowResult ? (
+                        <Card className="glass-card">
+                          <CardHeader className="pb-3 border-b border-white/5">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <CardTitle className="text-sm font-semibold tracking-wide text-muted-foreground">Cronograma de Amortização</CardTitle>
+                              <ExportButtons result={result} />
+                            </div>
+                          </CardHeader>
+                          <CardContent className="pt-3">
+                            <FullFlowTable result={result.fullFlowResult} />
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        <Card className="glass-card">
+                          <CardHeader className="pb-3 border-b border-white/5">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <CardTitle className="text-sm font-semibold tracking-wide text-muted-foreground">Memória de Cálculo</CardTitle>
+                              <ExportButtons result={result} />
+                            </div>
+                          </CardHeader>
+                          <CardContent className="pt-3">
+                            <MemoryTable rows={result.memoryRows} indexType={result.indexType} />
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                  ) : (
+                    <EmptyResultsPanel onHelp={() => setShowHelp(true)} />
+                  )}
+                </section>
+              </div>
+            </TabsContent>
+
+            {/* Tab: Comparador */}
+            <TabsContent value="comparador" className="flex-1 m-0 data-[state=active]:flex flex-col">
+              <div className="flex-1 grid grid-cols-1 lg:grid-cols-[400px_1fr] max-w-[1600px] mx-auto w-full">
+                <aside className="border-r border-white/5 overflow-y-auto bg-card/20 backdrop-blur-sm relative glass-panel mb-0 rounded-none border-y-0 border-l-0">
+                  <div className="p-5">
+                    <ComparadorForm onResult={setCompareResult} />
+                  </div>
+                </aside>
+                <section className="overflow-y-auto bg-transparent relative">
+                  {compareResult ? (
+                    <div className="p-6 space-y-6 animate-slide-in-right">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h2 className="text-base font-semibold">Comparação de Cenários</h2>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {compareResult.scenarios.filter(s => !s.error).length} cenários calculados
+                            · Montante base: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(compareResult.initialAmount)}
+                          </p>
+                        </div>
+                      </div>
+                      <ComparadorResult result={compareResult} />
+                    </div>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center py-20 px-8 text-center gap-5">
+                      <div className="rounded-full bg-primary/10 border border-primary/20 p-5">
+                        <GitCompare className="h-10 w-10 text-primary/60" />
+                      </div>
+                      <div>
+                        <p className="text-base font-medium text-foreground/80">Nenhuma comparação realizada</p>
+                        <p className="text-sm text-muted-foreground mt-1 max-w-xs">
+                          Configure os cenários ao lado e clique em{' '}
+                          <span className="text-primary font-medium">Comparar Cenários</span>.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              </div>
+            </TabsContent>
+
+            {/* Tab: Índices */}
+            <TabsContent value="indices" className="m-0 p-6 max-w-[1600px] mx-auto w-full">
+              <IndexAdmin />
+            </TabsContent>
+
+            {/* Tab: Câmbio */}
+            <TabsContent value="cambio" className="flex-1 m-0 data-[state=active]:flex flex-col">
+              <ExchangePanel />
+            </TabsContent>
+
+          </Tabs>
         </div>
-      </div>
+      )}
 
-      {/* ── Conteúdo principal ── */}
-      <div className="flex-1 flex flex-col relative z-10">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-
-          {/* Tab bar */}
-          <div className="border-b border-white/5 bg-background/20 backdrop-blur-sm px-6">
-            <div className="max-w-[1600px] mx-auto">
-              <TabsList className="h-auto bg-transparent p-0 gap-0">
-                <TabsTrigger
-                  value="calculadora"
-                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm gap-1.5 transition-colors"
-                >
-                  <TrendingUp className="h-3.5 w-3.5" />
-                  Calculadora
-                </TabsTrigger>
-                <TabsTrigger
-                  value="comparador"
-                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm gap-1.5"
-                >
-                  <GitCompare className="h-3.5 w-3.5" />
-                  Comparador
-                </TabsTrigger>
-                <TabsTrigger
-                  value="indices"
-                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm gap-1.5"
-                >
-                  <Settings className="h-3.5 w-3.5" />
-                  Índices
-                </TabsTrigger>
-                <TabsTrigger
-                  value="cambio"
-                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3 text-sm gap-1.5"
-                >
-                  <Globe className="h-3.5 w-3.5" />
-                  Câmbio
-                </TabsTrigger>
-              </TabsList>
-            </div>
-          </div>
-
-          {/* Tab: Calculadora — Split view */}
-          <TabsContent value="calculadora" className="flex-1 m-0 data-[state=active]:flex flex-col">
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-[400px_1fr] max-w-[1600px] mx-auto w-full">
-
-              {/* Coluna esquerda — Formulário */}
-              <aside className="border-r border-white/5 overflow-y-auto bg-card/20 backdrop-blur-sm relative glass-panel mb-0 rounded-none border-y-0 border-l-0">
-                <div className="p-5 relative">
-                  {/* Botão de ajuda */}
-                  <div className="absolute top-5 right-5 z-10">
-                    <button
-                      onClick={() => setShowHelp(v => !v)}
-                      title="Como usar"
-                      className="text-muted-foreground hover:text-primary p-1 rounded transition-colors"
-                    >
-                      <HelpCircle className="h-4 w-4" />
-                    </button>
-                    {showHelp && <HelpPopover onClose={() => setShowHelp(false)} />}
-                  </div>
-                  <CalculatorForm onResult={handleResult} />
-                </div>
-              </aside>
-
-              {/* Coluna direita — Resultados */}
-              <section className="overflow-y-auto bg-transparent relative">
-                {result ? (
-                  <div className="p-6 space-y-6 animate-slide-in-right">
-                    <ResultsSummary result={result} />
-
-                    <Card className="glass-card">
-                      <CardHeader className="pb-3 border-b border-white/5">
-                        <CardTitle className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
-                          <BarChart3 className="h-4 w-4 text-primary" />
-                          Evolução do Saldo
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="pt-4">
-                        <EvolutionChart result={result} />
-                      </CardContent>
-                    </Card>
-
-                    {result.thesisType === 'FLUXO_COMPLETO' && result.fullFlowResult ? (
-                      <Card className="glass-card">
-                        <CardHeader className="pb-3 border-b border-white/5">
-                          <div className="flex items-center justify-between flex-wrap gap-2">
-                            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                              Cronograma de Amortização
-                            </CardTitle>
-                            <ExportButtons result={result} />
-                          </div>
-                        </CardHeader>
-                        <CardContent className="pt-3">
-                          <FullFlowTable result={result.fullFlowResult} />
-                        </CardContent>
-                      </Card>
-                    ) : (
-                      <Card className="glass-card">
-                        <CardHeader className="pb-3 border-b border-white/5">
-                          <div className="flex items-center justify-between flex-wrap gap-2">
-                            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                              Memória de Cálculo
-                            </CardTitle>
-                            <ExportButtons result={result} />
-                          </div>
-                        </CardHeader>
-                        <CardContent className="pt-3">
-                          <MemoryTable rows={result.memoryRows} indexType={result.indexType} />
-                        </CardContent>
-                      </Card>
-                    )}
-                  </div>
-                ) : (
-                  <EmptyResultsPanel onHelp={() => setShowHelp(true)} />
-                )}
-              </section>
-            </div>
-          </TabsContent>
-
-          {/* Tab: Comparador */}
-          <TabsContent value="comparador" className="flex-1 m-0 data-[state=active]:flex flex-col">
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-[400px_1fr] max-w-[1600px] mx-auto w-full">
-              <aside className="border-r border-white/5 overflow-y-auto bg-card/20 backdrop-blur-sm relative glass-panel mb-0 rounded-none border-y-0 border-l-0">
-                <div className="p-5">
-                  <ComparadorForm onResult={r => { setCompareResult(r); }} />
-                </div>
-              </aside>
-              <section className="overflow-y-auto bg-transparent relative">
-                {compareResult ? (
-                  <div className="p-6 space-y-4 animate-slide-in-right">
-                    <div>
-                      <h2 className="text-base font-semibold text-foreground">Comparação de Cenários</h2>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {compareResult.scenarios.filter(s => !s.error).length} cenários calculados · Montante base:{' '}
-                        <span className="font-mono text-foreground/80">
-                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(compareResult.initialAmount)}
-                        </span>
-                      </p>
-                    </div>
-                    <ComparadorResult result={compareResult} />
-                  </div>
-                ) : (
-                  <div className="h-full flex flex-col items-center justify-center py-20 px-8 text-center gap-4">
-                    <div className="rounded-full bg-primary/10 border border-primary/20 p-5">
-                      <GitCompare className="h-10 w-10 text-primary/60" />
-                    </div>
-                    <div>
-                      <p className="text-base font-medium text-foreground/80">Nenhuma comparação realizada</p>
-                      <p className="text-sm text-muted-foreground mt-1 max-w-xs">
-                        Configure os cenários ao lado e clique em{' '}
-                        <span className="text-primary font-medium">Comparar Cenários</span>.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </section>
-            </div>
-          </TabsContent>
-
-          {/* Tab: Índices */}
-          <TabsContent value="indices" className="m-0 p-6 max-w-[1600px] mx-auto w-full">
-            <IndexAdmin />
-          </TabsContent>
-
-          {/* Tab: Câmbio */}
-          <TabsContent value="cambio" className="flex-1 m-0 data-[state=active]:flex flex-col">
-            <ExchangePanel />
-          </TabsContent>
-
-        </Tabs>
-      </div>
-
-      {/* Footer */}
-      <footer className="border-t border-white/5 py-4 text-center bg-card/20 backdrop-blur-md relative z-10">
-        <p className="text-[11px] text-muted-foreground">
-          CDI · Selic · IPCA · IGP-M · INCC via{' '}
-          <span className="text-primary font-medium">BCB SGS</span>
-          {' · '}SOFR via <span className="text-primary font-medium">FRED</span>
-          {' · '}Precisão decimal arbitrária
-        </p>
-        <p className="text-[10px] text-muted-foreground/40 mt-0.5 italic">
-          Correção Financeira by Danilo dos Reis
-        </p>
-      </footer>
+      {/* Footer só aparece no app para economizar espaço visual na landing (opcional) */}
+      {view === 'app' && (
+        <footer className="border-t border-white/5 py-4 text-center bg-card/20 backdrop-blur-md relative z-10">
+          <p className="text-[11px] text-muted-foreground">
+            CDI · Selic · IPCA · IGP-M · INCC via{' '}
+            <span className="text-primary font-medium">BCB SGS</span>
+            {' · '}SOFR via <span className="text-primary font-medium">FRED</span>
+          </p>
+        </footer>
+      )}
     </div>
   );
 }

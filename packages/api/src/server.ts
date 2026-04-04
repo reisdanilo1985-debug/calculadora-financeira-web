@@ -6,6 +6,7 @@ import { calculateRouter } from './routes/calculate';
 import { indicesRouter } from './routes/indices';
 import { compareRouter } from './routes/compare';
 import { exchangeRouter } from './routes/exchange';
+import { marketRouter } from './routes/market';
 import logger from './middleware/logger';
 
 const app = express();
@@ -35,6 +36,7 @@ app.use('/api/calcular', calculateRouter);
 app.use('/api/indices', indicesRouter);
 app.use('/api/comparar', compareRouter);
 app.use('/api/exchange', exchangeRouter);
+app.use('/api/market', marketRouter);
 
 // Health check
 app.get('/health', (_req, res) => {
