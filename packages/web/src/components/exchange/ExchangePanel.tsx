@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { Download, TrendingUp, Globe, BarChart3, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Download, TrendingUp, Globe, BarChart3, AlertCircle, ArrowLeftRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { getExchangeRates, getExchangeSummary, ExchangeRateData, ExchangeSummaryData } from '@/lib/api';
+import { NumericFormat } from 'react-number-format';
+import { getExchangeRates, getExchangeSummary, getLatestRates, LatestRate, ExchangeRateData, ExchangeSummaryData } from '@/lib/api';
 import {
   LineChart,
   Line,
@@ -26,6 +27,140 @@ const COLORS: Record<string, string> = {
   CHF: '#f59e0b', // amber
   CNY: '#ef4444', // red
 };
+
+const ALL_CURRENCIES = ['BRL', 'USD', 'EUR', 'GBP', 'JPY', 'CHF', 'CNY'];
+
+const CURRENCY_NAMES: Record<string, string> = {
+  BRL: 'Real Brasileiro',
+  USD: 'Dólar Americano',
+  EUR: 'Euro',
+  GBP: 'Libra Esterlina',
+  JPY: 'Iene Japonês',
+  CHF: 'Franco Suíço',
+  CNY: 'Yuan Chinês',
+};
+
+function CurrencyConverter() {
+  const [latestRates, setLatestRates] = useState<LatestRate[]>([]);
+  const [amount, setAmount] = useState<number>(1000);
+  const [from, setFrom] = useState('BRL');
+  const [to, setTo] = useState('USD');
+  const [rateDate, setRateDate] = useState('');
+
+  useEffect(() => {
+    getLatestRates().then(rates => {
+      setLatestRates(rates);
+      if (rates.length > 0) setRateDate(rates[0].date);
+    }).catch(() => {});
+  }, []);
+
+  // Taxas em BRL (base): BRL=1, demais vêm da API
+  const ratesInBRL = useMemo(() => {
+    const map: Record<string, number> = { BRL: 1 };
+    latestRates.forEach(r => { map[r.currency] = r.rate; });
+    // CNY: se não disponível na API, estima via USD (aprox.)
+    return map;
+  }, [latestRates]);
+
+  const converted = useMemo(() => {
+    if (!amount || !ratesInBRL[from] || !ratesInBRL[to]) return null;
+    const inBRL = amount * ratesInBRL[from];
+    return inBRL / ratesInBRL[to];
+  }, [amount, from, to, ratesInBRL]);
+
+  const swap = () => { setFrom(to); setTo(from); };
+
+  const fmt = (val: number, currency: string) => {
+    if (currency === 'JPY') return val.toLocaleString('ja-JP', { maximumFractionDigits: 0 });
+    return val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  };
+
+  const rateLabel = useMemo(() => {
+    if (!ratesInBRL[from] || !ratesInBRL[to]) return null;
+    const r = ratesInBRL[from] / ratesInBRL[to];
+    return `1 ${from} = ${fmt(r, to)} ${to}`;
+  }, [from, to, ratesInBRL]);
+
+  return (
+    <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3">
+      <div className="flex items-center gap-2 mb-1">
+        <ArrowLeftRight className="h-4 w-4 text-primary" />
+        <span className="text-sm font-semibold">Conversor Instantâneo</span>
+      </div>
+
+      {/* Amount */}
+      <div className="space-y-1.5">
+        <Label className="text-xs">Valor</Label>
+        <NumericFormat
+          customInput={Input}
+          thousandSeparator="."
+          decimalSeparator=","
+          decimalScale={2}
+          allowNegative={false}
+          value={amount || ''}
+          onValueChange={v => setAmount(v.floatValue || 0)}
+          className="font-mono"
+        />
+      </div>
+
+      {/* From / To */}
+      <div className="flex items-center gap-2">
+        <div className="flex-1 space-y-1.5">
+          <Label className="text-xs">De</Label>
+          <select
+            value={from}
+            onChange={e => setFrom(e.target.value)}
+            className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            {ALL_CURRENCIES.map(c => (
+              <option key={c} value={c}>{c} — {CURRENCY_NAMES[c]}</option>
+            ))}
+          </select>
+        </div>
+
+        <button onClick={swap} className="mt-5 p-2 rounded-md hover:bg-white/10 transition-colors text-muted-foreground hover:text-primary">
+          <ArrowLeftRight className="h-4 w-4" />
+        </button>
+
+        <div className="flex-1 space-y-1.5">
+          <Label className="text-xs">Para</Label>
+          <select
+            value={to}
+            onChange={e => setTo(e.target.value)}
+            className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            {ALL_CURRENCIES.map(c => (
+              <option key={c} value={c}>{c} — {CURRENCY_NAMES[c]}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Result */}
+      {converted !== null && amount > 0 ? (
+        <div className="rounded-lg bg-black/30 border border-white/10 p-3 text-center">
+          <p className="text-2xl font-bold text-primary font-mono">
+            {fmt(converted, to)} <span className="text-base font-semibold text-foreground">{to}</span>
+          </p>
+          {rateLabel && (
+            <p className="text-[11px] text-muted-foreground mt-1">{rateLabel}</p>
+          )}
+          {rateDate && (
+            <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+              Cotação BCB: {rateDate.split('-').reverse().join('/')}
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-lg bg-black/30 border border-white/10 p-3 text-center">
+          <p className="text-xs text-muted-foreground">
+            {latestRates.length === 0 ? 'Carregando cotações…' : 'Informe um valor para converter'}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function ExchangePanel() {
   const [startDate, setStartDate] = useState(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
@@ -138,7 +273,9 @@ export function ExchangePanel() {
         <p className="text-xs text-muted-foreground mb-6">Consulte limites, médias e faça o download histórico de moedas oficiais.</p>
         
         <div className="space-y-5">
-          <div className="space-y-3">
+          <CurrencyConverter />
+
+          <div className="border-t border-white/5 pt-5 space-y-3">
             <Label>Moedas Opcionais (vs BRL)</Label>
             <div className="flex flex-wrap gap-2">
               {AVAILABLE_CURRENCIES.map(c => (
@@ -178,7 +315,7 @@ export function ExchangePanel() {
           <Button onClick={handleFetch} disabled={loading} className="w-full">
             {loading ? 'Consultando BCB...' : 'Gerar Relatório'}
           </Button>
-        </div>
+          </div>
       </aside>
 
       {/* Main Content: Results */}

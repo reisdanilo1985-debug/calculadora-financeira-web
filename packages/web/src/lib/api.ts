@@ -285,6 +285,18 @@ export async function getExchangeSummary(
   return data;
 }
 
+export interface LatestRate {
+  currency: string;
+  rate: number;
+  date: string;
+}
+
+/** Busca a cotação mais recente de todas as moedas */
+export async function getLatestRates(): Promise<LatestRate[]> {
+  const { data } = await api.get<LatestRate[]>('/exchange/latest');
+  return data;
+}
+
 // ── Mercado e Tickers ────────────────────────────────────────────────────────
 export interface MarketAsset {
   symbol: string;

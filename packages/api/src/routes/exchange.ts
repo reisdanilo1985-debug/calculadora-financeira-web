@@ -44,6 +44,32 @@ exchangeRouter.get('/rates', async (req: Request, res: Response) => {
   }
 });
 
+exchangeRouter.get('/latest', async (req: Request, res: Response) => {
+  const currencies = [Currency.USD, Currency.EUR, Currency.GBP, Currency.JPY, Currency.CHF];
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - 7); // últimos 7 dias para garantir pelo menos 1 dia útil
+
+  try {
+    const results: { currency: string; rate: number; date: string }[] = [];
+    for (const currency of currencies) {
+      const rates = await getExchangeRates(currency, start, end);
+      if (rates.length > 0) {
+        const latest = rates[rates.length - 1];
+        results.push({
+          currency,
+          rate: latest.sellValue,
+          date: latest.date.toISOString().slice(0, 10),
+        });
+      }
+    }
+    return res.json(results);
+  } catch (error: any) {
+    logger.error('Erro ao buscar cotações mais recentes:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 exchangeRouter.get('/summary', async (req: Request, res: Response) => {
   const { currencies, startDate, endDate } = req.query;
 
