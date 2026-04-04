@@ -44,7 +44,19 @@ export async function getMarketPulse(): Promise<MarketAsset[]> {
 
   try {
     const symbols = TICKERS.map(t => t.symbol);
-    const results = await yahooFinance.quote(symbols) as any[];
+    
+    // Chunk requests into groups of 5 to avoid Yahoo Finance batch array limits or partial failures
+    const results: any[] = [];
+    for (let i = 0; i < symbols.length; i += 5) {
+      const chunk = symbols.slice(i, i + 5);
+      try {
+        const res = await yahooFinance.quote(chunk);
+        if (Array.isArray(res)) results.push(...res);
+        else results.push(res);
+      } catch (err) {
+        logger.warn(`[MarketDashboard] Falha silenciosa ignorada no chunk: ${chunk}`);
+      }
+    }
 
     const assets: MarketAsset[] = results.map((quote: any) => {
       const tickerInfo = TICKERS.find(t => t.symbol === quote.symbol);
