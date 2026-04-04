@@ -1,90 +1,73 @@
 /**
- * Serviço de integração com a API FRED (Federal Reserve Economic Data).
+ * Serviço de integração com o FRED (Federal Reserve Economic Data).
  * Utilizado para obter dados do SOFR.
  *
- * API key gratuita: https://fred.stlouisfed.org/docs/api/api_key.html
- * Série: SOFR
+ * Utiliza o endpoint CSV público do FRED - SEM necessidade de API Key.
+ * Endpoint: https://fred.stlouisfed.org/graph/fredgraph.csv?id=SOFR
  */
 
-import axios, { AxiosError } from 'axios';
+import axios from 'axios';
 import { IndexType, IndexDataPoint } from '@correcao/core';
 import { saveIndexData, getIndexData, getLastCachedDate } from './DatabaseService';
 import logger from '../middleware/logger';
 
-const FRED_BASE_URL = 'https://api.stlouisfed.org/fred/series/observations';
-const SOFR_SERIES_ID = 'SOFR';
-
-interface FREDObservation {
-  date: string;     // YYYY-MM-DD
-  value: string;    // valor ou '.'
-}
-
-interface FREDResponse {
-  observations: FREDObservation[];
-}
-
-function toFREDDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
+const FRED_CSV_URL = 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=SOFR';
 
 /**
- * Busca dados do SOFR via API FRED.
+ * Busca dados do SOFR via CSV público do FRED (sem API Key).
  */
-async function fetchSOFRFromFRED(
+async function fetchSOFRFromFREDCSV(
   startDate: Date,
-  endDate: Date,
-  apiKey: string
+  endDate: Date
 ): Promise<IndexDataPoint[]> {
   try {
-    logger.info(`FRED SOFR: ${toFREDDate(startDate)} → ${toFREDDate(endDate)}`);
+    logger.info(`FRED CSV SOFR: ${startDate.toISOString().slice(0, 10)} → ${endDate.toISOString().slice(0, 10)}`);
 
-    const response = await axios.get<FREDResponse>(FRED_BASE_URL, {
-      params: {
-        series_id: SOFR_SERIES_ID,
-        api_key: apiKey,
-        file_type: 'json',
-        observation_start: toFREDDate(startDate),
-        observation_end: toFREDDate(endDate),
-        sort_order: 'asc',
-      },
-      timeout: 15000,
+    const response = await axios.get<string>(FRED_CSV_URL, {
+      timeout: 20000,
+      responseType: 'text',
+      headers: { 'Accept': 'text/csv,text/plain,*/*' },
     });
 
-    return response.data.observations
-      .filter(obs => obs.value !== '.' && !isNaN(parseFloat(obs.value)))
-      .map(obs => ({
-        date: new Date(obs.date + 'T12:00:00'),
-        value: parseFloat(obs.value),
-      }));
-  } catch (error) {
-    const axiosError = error as AxiosError;
-    throw new Error(`Falha ao buscar SOFR do FRED: ${axiosError.message}`);
+    const lines = response.data.split('\n').slice(1); // pula o header "observation_date,SOFR"
+    const startStr = startDate.toISOString().slice(0, 10);
+    const endStr = endDate.toISOString().slice(0, 10);
+
+    const points: IndexDataPoint[] = [];
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      const [dateStr, valueStr] = trimmed.split(',');
+      if (!dateStr || !valueStr || valueStr === '.' || valueStr === '') continue;
+
+      // Filtrar pelo período solicitado
+      if (dateStr < startStr || dateStr > endStr) continue;
+
+      const value = parseFloat(valueStr);
+      if (isNaN(value)) continue;
+
+      points.push({
+        date: new Date(dateStr + 'T12:00:00'),
+        value,
+      });
+    }
+
+    logger.info(`FRED CSV: ${points.length} registros SOFR carregados`);
+    return points;
+  } catch (error: any) {
+    throw new Error(`Falha ao buscar SOFR do FRED CSV: ${error.message}`);
   }
 }
 
 /**
- * Busca dados do SOFR com cache.
+ * Busca dados do SOFR com cache local.
  */
 export async function getSOFRWithCache(
   startDate: Date,
   endDate: Date
 ): Promise<{ data: IndexDataPoint[]; fromCache: boolean; warning?: string }> {
-  const apiKey = process.env.FRED_API_KEY;
-
-  if (!apiKey) {
-    const cachedData = getIndexData(IndexType.SOFR, startDate, endDate);
-    if (cachedData.length > 0) {
-      return {
-        data: cachedData,
-        fromCache: true,
-        warning: 'FRED_API_KEY não configurada. Usando dados em cache.',
-      };
-    }
-    throw new Error(
-      'FRED_API_KEY não configurada. Configure a variável de ambiente para buscar dados do SOFR.'
-    );
-  }
-
   const lastCachedDate = getLastCachedDate(IndexType.SOFR);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -93,18 +76,19 @@ export async function getSOFRWithCache(
 
   if (needsFetch) {
     try {
+      // Busca desde o início do SOFR se não houver cache, ou só o incremento
       const fetchStart = lastCachedDate
         ? new Date(lastCachedDate.getTime() + 86400000)
-        : new Date('2018-04-02'); // Data de início do SOFR
+        : new Date('2018-04-02');
 
-      const newData = await fetchSOFRFromFRED(fetchStart, today, apiKey);
+      const newData = await fetchSOFRFromFREDCSV(fetchStart, today);
 
       if (newData.length > 0) {
         saveIndexData(IndexType.SOFR, newData);
-        logger.info(`Cache SOFR atualizado: ${newData.length} registros`);
+        logger.info(`Cache SOFR atualizado: ${newData.length} novos registros`);
       }
-    } catch (error) {
-      const warning = `API FRED indisponível. Usando dados SOFR em cache.`;
+    } catch (error: any) {
+      const warning = `FRED indisponível. Usando dados SOFR em cache. (${error.message})`;
       logger.warn(warning);
       const cachedData = getIndexData(IndexType.SOFR, startDate, endDate);
       return { data: cachedData, fromCache: true, warning };
@@ -116,18 +100,16 @@ export async function getSOFRWithCache(
 }
 
 /**
- * Força atualização completa do histórico do SOFR.
+ * Força atualização completa do histórico do SOFR (desde 2018).
  */
 export async function forceRefreshSOFR(): Promise<number> {
-  const apiKey = process.env.FRED_API_KEY;
-  if (!apiKey) throw new Error('FRED_API_KEY não configurada.');
-
   const start = new Date('2018-04-02');
   const today = new Date();
 
-  const data = await fetchSOFRFromFRED(start, today, apiKey);
+  logger.info('[SOFR] Iniciando refresh completo via FRED CSV público...');
+  const data = await fetchSOFRFromFREDCSV(start, today);
   const inserted = saveIndexData(IndexType.SOFR, data);
 
-  logger.info(`Refresh completo SOFR: ${inserted} novos registros`);
+  logger.info(`[SOFR] Refresh completo: ${inserted} novos registros inseridos`);
   return inserted;
 }
