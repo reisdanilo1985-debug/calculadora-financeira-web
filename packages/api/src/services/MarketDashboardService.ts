@@ -51,25 +51,32 @@ export async function getMarketPulse(): Promise<MarketAsset[]> {
       const chunk = symbols.slice(i, i + 5);
       try {
         const res = await yahooFinance.quote(chunk);
-        if (Array.isArray(res)) results.push(...res);
-        else results.push(res);
+        if (res) {
+          if (Array.isArray(res)) {
+            results.push(...res.filter(r => r && r.symbol));
+          } else if (res.symbol) {
+            results.push(res);
+          }
+        }
       } catch (err) {
-        logger.warn(`[MarketDashboard] Falha silenciosa ignorada no chunk: ${chunk}`);
+        logger.warn(`[MarketDashboard] Falha ao buscar chunk: ${chunk.join(', ')}`);
       }
     }
 
-    const assets: MarketAsset[] = results.map((quote: any) => {
-      const tickerInfo = TICKERS.find(t => t.symbol === quote.symbol);
-      return {
-        symbol: quote.symbol,
-        name: tickerInfo?.name || quote.symbol,
-        price: quote.regularMarketPrice || 0,
-        change: quote.regularMarketChange || 0,
-        changePercent: quote.regularMarketChangePercent || 0,
-        currency: quote.currency || 'USD',
-        type: tickerInfo?.type || 'price',
-      };
-    });
+    const assets: MarketAsset[] = results
+      .filter(quote => quote && quote.symbol)
+      .map((quote: any) => {
+        const tickerInfo = TICKERS.find(t => t.symbol === quote.symbol);
+        return {
+          symbol: quote.symbol,
+          name: tickerInfo?.name || quote.symbol,
+          price: quote.regularMarketPrice || 0,
+          change: quote.regularMarketChange || 0,
+          changePercent: quote.regularMarketChangePercent || 0,
+          currency: quote.currency || 'USD',
+          type: tickerInfo?.type || 'price',
+        };
+      });
 
     const sortedAssets = TICKERS
       .map(t => assets.find(a => a.symbol === t.symbol) as MarketAsset)
