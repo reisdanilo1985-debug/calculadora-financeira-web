@@ -45,7 +45,7 @@ exchangeRouter.get('/rates', async (req: Request, res: Response) => {
 });
 
 exchangeRouter.get('/latest', async (req: Request, res: Response) => {
-  const currencies = [Currency.USD, Currency.EUR, Currency.GBP, Currency.JPY, Currency.CHF];
+  const currencies = [Currency.USD, Currency.EUR, Currency.GBP, Currency.JPY, Currency.CHF, Currency.CNY];
   const end = new Date();
   const start = new Date();
   start.setDate(start.getDate() - 7); // últimos 7 dias para garantir pelo menos 1 dia útil
