@@ -14,8 +14,23 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middlewares
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:3000',
+  ...(process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map(o => o.trim()) : []),
+];
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    // Permite requisições sem origin (ex: Postman, curl, health checks)
+    if (!origin) return callback(null, true);
+    // Permite qualquer subdomínio da Vercel
+    if (origin.endsWith('.vercel.app') || origin.endsWith('.onrender.com')) return callback(null, true);
+    // Permite origens explicitamente configuradas
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error(`Origem bloqueada pelo CORS: ${origin}`));
+  },
   credentials: true,
 }));
 
