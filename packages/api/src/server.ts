@@ -7,6 +7,7 @@ import { indicesRouter } from './routes/indices';
 import { compareRouter } from './routes/compare';
 import { exchangeRouter } from './routes/exchange';
 import { marketRouter } from './routes/market';
+import { startCronJobs } from './jobs/cronTasks';
 import logger from './middleware/logger';
 
 const app = express();
@@ -14,7 +15,7 @@ const PORT = process.env.PORT || 3001;
 
 // Middlewares
 app.use(cors({
-  origin: true,
+  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   credentials: true,
 }));
 
@@ -57,6 +58,9 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 app.listen(PORT, () => {
   logger.info(`Servidor rodando em http://localhost:${PORT}`);
   logger.info(`Ambiente: ${process.env.NODE_ENV || 'development'}`);
+  
+  // Iniciar tarefas agendadas (Cron)
+  startCronJobs();
 });
 
 export default app;
