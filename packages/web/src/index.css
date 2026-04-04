@@ -89,7 +89,7 @@ button, [role="button"] {
     animation: pulse-glow 2s infinite;
   }
   .animate-marquee {
-    animation: marquee 30s linear infinite;
+    animation: marquee 15s linear infinite;
   }
   .tabular-nums {
     font-variant-numeric: tabular-nums;
