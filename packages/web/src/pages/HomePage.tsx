@@ -10,6 +10,7 @@ import { ComparadorForm } from '@/components/comparador/ComparadorForm';
 import { ComparadorResult } from '@/components/comparador/ComparadorResult';
 import { IndexAdmin } from '@/components/admin/IndexAdmin';
 import { ExchangePanel } from '@/components/exchange/ExchangePanel';
+import { PtaxPanel } from '@/components/ptax/PtaxPanel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CalculationResult, CompareResult } from '@/lib/api';
@@ -136,6 +137,12 @@ export function HomePage() {
               className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'cambio' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
             >
               Câmbio
+            </button>
+            <button
+              onClick={() => setActiveTab('ptax')}
+              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'ptax' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              PTAX BCB
             </button>
             <button
               onClick={() => setActiveTab('indices')}
@@ -270,6 +277,11 @@ export function HomePage() {
             {/* Tab: Câmbio */}
             <TabsContent value="cambio" className="flex-1 m-0 data-[state=active]:flex flex-col">
               <ExchangePanel />
+            </TabsContent>
+
+            {/* Tab: PTAX Oficial */}
+            <TabsContent value="ptax" className="flex-1 m-0 data-[state=active]:flex flex-col">
+              <PtaxPanel />
             </TabsContent>
 
           </Tabs>
