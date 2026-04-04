@@ -841,22 +841,21 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
                   <AccordionTrigger
                     id="avancado"
                     icon={<Sliders className="h-3.5 w-3.5" />}
-                    subtitle={`Amortizações${amortizations.length > 0 ? ` (${amortizations.length})` : ''}`}
+                    subtitle={amortizations.length > 0 ? `${amortizations.length} cadastrada${amortizations.length > 1 ? 's' : ''}` : ''}
                   >
-                    Opções Avançadas
+                    Amortizações
                   </AccordionTrigger>
                 </div>
                 <AccordionContent id="avancado" className="px-3 pb-3">
                   <div className="flex items-center justify-between pt-1">
                     <div>
-                      <Label>Amortizações</Label>
                       {amortizations.length > 0 && (
-                        <Badge variant="secondary" className="ml-2">{amortizations.length}</Badge>
+                        <Badge variant="secondary">{amortizations.length}</Badge>
                       )}
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => setShowAmortModal(true)} className="gap-1.5">
+                    <Button variant="outline" size="sm" onClick={() => setShowAmortModal(true)} className="gap-2 px-4">
                       <Plus className="h-4 w-4" />
-                      Gerenciar
+                      Cadastrar
                     </Button>
                   </div>
                 </AccordionContent>
