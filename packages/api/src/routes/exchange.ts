@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { Currency } from '@correcao/core';
 import { getExchangeRates, getExchangeSummary } from '../services/ExchangeService';
+import { PtaxService, PtaxBulletinType } from '../services/PtaxService';
 import logger from '../middleware/logger';
 
 export const exchangeRouter = Router();
@@ -102,6 +103,51 @@ exchangeRouter.get('/summary', async (req: Request, res: Response) => {
     return res.json(summaries);
   } catch (error: any) {
     logger.error('Erro ao processar resumo de câmbio:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// --- Rotas PTAX ---
+
+exchangeRouter.get('/ptax/moedas', async (req: Request, res: Response) => {
+  try {
+    const currencies = await PtaxService.getCurrencies();
+    return res.json(currencies);
+  } catch (error: any) {
+    logger.error('Erro ao buscar moedas PTAX:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+exchangeRouter.get('/ptax/cotacao', async (req: Request, res: Response) => {
+  const { currency, startDate, endDate, bulletin = 'Fechamento' } = req.query;
+
+  if (!currency || !startDate || !endDate) {
+    return res.status(400).json({ error: 'currency, startDate e endDate são obrigatórios' });
+  }
+
+  const start = new Date(startDate as string);
+  const end = new Date(endDate as string);
+
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    return res.status(400).json({ error: 'Datas inválidas' });
+  }
+
+  try {
+    const summary = await PtaxService.getSummaryPeriod(
+      (currency as string).toUpperCase(), 
+      start, 
+      end, 
+      bulletin as PtaxBulletinType
+    );
+    
+    if (!summary) {
+      return res.status(404).json({ error: 'Nenhuma cotação encontrada no período' });
+    }
+    
+    return res.json(summary);
+  } catch (error: any) {
+    logger.error('Erro ao buscar PTAX:', error);
     return res.status(500).json({ error: error.message });
   }
 });

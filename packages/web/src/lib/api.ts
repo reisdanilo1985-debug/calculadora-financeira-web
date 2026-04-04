@@ -297,6 +297,61 @@ export async function getLatestRates(): Promise<LatestRate[]> {
   return data;
 }
 
+// ── Câmbio (PTAX - BCB Olinda) ────────────────────────────────────────────────
+
+export interface PtaxQuote {
+  date: string;
+  buyRate: number;
+  sellRate: number;
+  buyParity?: number;
+  sellParity?: number;
+  bulletinType: string;
+  timestamp: string;
+}
+
+export interface PtaxSummaryData {
+  currency: string;
+  periodStart: string;
+  periodEnd: string;
+  bulletinType: string;
+  averageBuyRate: number;
+  averageSellRate: number;
+  minSellRate: number;
+  minSellDate: string;
+  maxSellRate: number;
+  maxSellDate: string;
+  businessDays: number;
+  lastQuoteBuy: number;
+  lastQuoteSell: number;
+  lastQuoteDate: string;
+  quotes: PtaxQuote[];
+}
+
+export interface BcbCurrency {
+  simbolo: string;
+  nomeFormatado: string;
+  tipoMoeda: string;
+}
+
+/** Busca sumário PTAX de uma moeda no período */
+export async function getPtaxSummary(
+  currency: string,
+  startDate: string,
+  endDate: string,
+  bulletin: string = 'Fechamento'
+): Promise<PtaxSummaryData> {
+  const { data } = await api.get<PtaxSummaryData>('/exchange/ptax/cotacao', {
+    params: { currency, startDate, endDate, bulletin },
+  });
+  return data;
+}
+
+/** Busca moedas disponíveis no PTAX */
+export async function getPtaxCurrencies(): Promise<BcbCurrency[]> {
+  const { data } = await api.get<BcbCurrency[]>('/exchange/ptax/moedas');
+  return data;
+}
+
 // ── Mercado e Tickers ────────────────────────────────────────────────────────
 export interface MarketAsset {
   symbol: string;
