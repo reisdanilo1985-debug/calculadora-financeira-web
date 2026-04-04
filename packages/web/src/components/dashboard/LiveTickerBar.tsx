@@ -18,7 +18,7 @@ export function LiveTickerBar() {
       }
     }
     load();
-    const int = setInterval(load, 3 * 60 * 1000); // atualiza a cada 3 min
+    const int = setInterval(load, 30 * 1000); // atualiza a cada 30s
     return () => clearInterval(int);
   }, []);
 
@@ -31,18 +31,18 @@ export function LiveTickerBar() {
   }
 
   return (
-    <div className="h-8 overflow-hidden bg-black/80 border-b border-primary/20 relative flex items-center w-full group">
-      {/* Sombreamento lateral para suavizar o marquee */}
-      <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-black/80 to-transparent z-10" />
-      <div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-black/80 to-transparent z-10" />
+    <div className="h-8 overflow-hidden bg-black/80 border-b border-primary/20 relative group">
+      {/* Sombreamento lateral */}
+      <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-black/80 to-transparent z-10 pointer-events-none" />
+      <div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-black/80 to-transparent z-10 pointer-events-none" />
 
-      <div className="flex animate-marquee group-hover:[animation-play-state:paused] whitespace-nowrap min-w-full items-center">
+      <div className="flex h-full items-center animate-marquee group-hover:[animation-play-state:paused]">
         {[...pulse, ...pulse, ...pulse].map((asset, i) => {
           const isUp = asset.change >= 0;
           return (
-            <div key={`${asset.symbol}-${i}`} className="flex items-center mx-4 gap-2 text-[11px] font-mono">
+            <div key={`${asset.symbol}-${i}`} className="flex items-center mx-4 gap-2 text-[11px] font-mono shrink-0">
               <span className="text-muted-foreground font-semibold tracking-wider">{asset.name}</span>
-              <span className="text-foreground">{formatPrice(asset.price, asset.currency)}</span>
+              <span className="text-foreground">{formatValue(asset)}</span>
               <span className={`flex items-center ${isUp ? 'text-emerald-400' : 'text-rose-400'}`}>
                 {isUp ? <ArrowUpRight className="h-3 w-3 mr-0.5" /> : <ArrowDownRight className="h-3 w-3 mr-0.5" />}
                 {asset.changePercent > 0 ? '+' : ''}{asset.changePercent.toFixed(2)}%
@@ -55,9 +55,12 @@ export function LiveTickerBar() {
   );
 }
 
-function formatPrice(price: number, currency: string) {
-  if (currency === 'USD' || currency === 'BRL') {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).format(price);
+function formatValue(asset: MarketAsset): string {
+  const { price, currency, type } = asset;
+  if (type === 'yield') return `${price.toFixed(2)}%`;
+  if (type === 'index') return price.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  if (currency === 'BRL') {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: price >= 1000 ? 0 : 2 }).format(price);
   }
-  return price.toLocaleString();
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD', maximumFractionDigits: price >= 1000 ? 0 : 2 }).format(price);
 }

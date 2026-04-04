@@ -13,7 +13,6 @@ import { ExchangePanel } from '@/components/exchange/ExchangePanel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CalculationResult, CompareResult } from '@/lib/api';
-import { LandingPage } from './LandingPage';
 import { LiveTickerBar } from '@/components/dashboard/LiveTickerBar';
 
 const HELP_STEPS = [
@@ -94,7 +93,6 @@ export function HomePage() {
   const [compareResult, setCompareResult] = useState<CompareResult | null>(null);
   const [activeTab, setActiveTab] = useState('calculadora');
   const [showHelp, setShowHelp] = useState(false);
-  const [view, setView] = useState<'landing' | 'app'>('landing');
 
   const handleResult = (r: CalculationResult) => {
     setResult(r);
@@ -115,33 +113,33 @@ export function HomePage() {
         {/* ── Navbar Global ── */}
         <header className="border-b border-white/5 bg-background/80 backdrop-blur-xl">
         <div className="max-w-[1600px] mx-auto h-16 flex items-center justify-between px-6">
-          <button onClick={() => setView('landing')} className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
+          <a href="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
             <TrendingUp className="h-5 w-5 text-primary" />
             <span className="font-bold text-lg text-foreground tracking-tight">Correção Financeira</span>
-          </button>
+          </a>
           
           <nav className="hidden md:flex items-center gap-8">
-            <button 
-              onClick={() => { setView('app'); setActiveTab('calculadora'); }} 
-              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${view === 'app' && activeTab === 'calculadora' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            <button
+              onClick={() => setActiveTab('calculadora')}
+              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'calculadora' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
             >
               Calculadora
             </button>
-            <button 
-              onClick={() => { setView('app'); setActiveTab('comparador'); }} 
-              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${view === 'app' && activeTab === 'comparador' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            <button
+              onClick={() => setActiveTab('comparador')}
+              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'comparador' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
             >
               Comparador
             </button>
-            <button 
-              onClick={() => { setView('app'); setActiveTab('cambio'); }} 
-              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${view === 'app' && activeTab === 'cambio' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            <button
+              onClick={() => setActiveTab('cambio')}
+              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'cambio' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
             >
               Câmbio
             </button>
-            <button 
-              onClick={() => { setView('app'); setActiveTab('indices'); }} 
-              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${view === 'app' && activeTab === 'indices' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            <button
+              onClick={() => setActiveTab('indices')}
+              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'indices' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
             >
               Índices/Admin
             </button>
@@ -153,11 +151,7 @@ export function HomePage() {
       {/* ── Espaçador para compensar cabeçalho fixo (ticker 28px + navbar 64px) ── */}
       <div className="h-[92px] shrink-0" />
 
-      {/* ── View Control ── */}
-      {view === 'landing' ? (
-        <LandingPage onNavigate={(tab) => { setView('app'); setActiveTab(tab); }} />
-      ) : (
-        <div className="flex-1 flex flex-col relative z-10 bg-black/20">
+      <div className="flex-1 flex flex-col relative z-10 bg-black/20">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
             
             {/* Tab: Calculadora */}
@@ -280,18 +274,14 @@ export function HomePage() {
 
           </Tabs>
         </div>
-      )}
 
-      {/* Footer só aparece no app para economizar espaço visual na landing (opcional) */}
-      {view === 'app' && (
-        <footer className="border-t border-white/5 py-4 text-center bg-card/20 backdrop-blur-md relative z-10">
-          <p className="text-[11px] text-muted-foreground">
-            CDI · Selic · IPCA · IGP-M · INCC via{' '}
-            <span className="text-primary font-medium">BCB SGS</span>
-            {' · '}SOFR via <span className="text-primary font-medium">FRED</span>
-          </p>
-        </footer>
-      )}
+      <footer className="border-t border-white/5 py-4 text-center bg-card/20 backdrop-blur-md relative z-10">
+        <p className="text-[11px] text-muted-foreground">
+          CDI · Selic · IPCA · IGP-M · INCC via{' '}
+          <span className="text-primary font-medium">BCB SGS</span>
+          {' · '}SOFR via <span className="text-primary font-medium">FRED</span>
+        </p>
+      </footer>
     </div>
   );
 }

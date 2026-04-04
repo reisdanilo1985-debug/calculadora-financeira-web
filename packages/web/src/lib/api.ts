@@ -4,11 +4,8 @@
 
 import axios from 'axios';
 
-const rawUrl = import.meta.env.VITE_API_URL || '';
-const backendUrl = rawUrl.endsWith('/api') ? rawUrl : (rawUrl ? `${rawUrl}/api` : '/api');
-
 const api = axios.create({
-  baseURL: backendUrl,
+  baseURL: '/api',
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
 });
@@ -187,17 +184,6 @@ export async function refreshIndex(indexType: string): Promise<{ inserted: numbe
   return data;
 }
 
-/** Verifica se premissas futuras são necessárias */
-export async function checkPremisesRequired(
-  indexType: string,
-  endDate: string
-): Promise<{ needsPremises: boolean; premisesRequiredFrom?: string; lastAvailableDate?: string }> {
-  const { data } = await api.get('/calcular/premissas-necessarias', {
-    params: { indexType, endDate },
-  });
-  return data;
-}
-
 // ── Comparador de Cenários ──────────────────────────────────────────────────
 
 export interface CompareScenarioInput {
@@ -296,6 +282,7 @@ export async function getExchangeSummary(
   return data;
 }
 
+// ── Mercado e Tickers ────────────────────────────────────────────────────────
 export interface MarketAsset {
   symbol: string;
   name: string;
@@ -303,11 +290,23 @@ export interface MarketAsset {
   change: number;
   changePercent: number;
   currency: string;
+  type: 'price' | 'yield' | 'index';
 }
 
 /** Busca cotações on-line de mercado */
 export async function getMarketPulse(): Promise<MarketAsset[]> {
   const { data } = await api.get<MarketAsset[]>('/market/pulse');
+  return data;
+}
+
+/** Verifica se premissas futuras são necessárias */
+export async function checkPremisesRequired(
+  indexType: string,
+  endDate: string
+): Promise<{ needsPremises: boolean; premisesRequiredFrom?: string; lastAvailableDate?: string }> {
+  const { data } = await api.get('/calcular/premissas-necessarias', {
+    params: { indexType, endDate },
+  });
   return data;
 }
 

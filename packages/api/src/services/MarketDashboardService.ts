@@ -1,5 +1,5 @@
 const YahooFinance = require('yahoo-finance2').default;
-const yahooFinance = new YahooFinance();
+const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 import logger from '../middleware/logger';
 
 export interface MarketAsset {
@@ -9,23 +9,32 @@ export interface MarketAsset {
   change: number;
   changePercent: number;
   currency: string;
+  type: 'price' | 'yield' | 'index';
 }
 
-const TICKERS = [
-  { symbol: '^BVSP', name: 'Ibovespa' },
-  { symbol: '^GSPC', name: 'S&P 500' },
-  { symbol: '^IXIC', name: 'NASDAQ' },
-  { symbol: 'BTC-USD', name: 'Bitcoin' },
-  { symbol: 'ETH-USD', name: 'Ethereum' },
-  { symbol: 'SOL-USD', name: 'Solana' },
-  { symbol: 'USDBRL=X', name: 'USD/BRL' },
-  { symbol: 'CL=F', name: 'Petróleo WTI' },
-  { symbol: 'DX-Y.NYB', name: 'DXY' },
+const TICKERS: { symbol: string; name: string; type: MarketAsset['type'] }[] = [
+  { symbol: '^BVSP',      name: 'Ibovespa',       type: 'index' },
+  { symbol: '^GSPC',      name: 'S&P 500',         type: 'index' },
+  { symbol: '^IXIC',      name: 'NASDAQ',          type: 'index' },
+  { symbol: '^VIX',       name: 'VIX',             type: 'index' },
+  { symbol: 'GC=F',       name: 'Ouro',            type: 'price' },
+  { symbol: 'SI=F',       name: 'Prata',           type: 'price' },
+  { symbol: 'CL=F',       name: 'Petróleo WTI',    type: 'price' },
+  { symbol: 'BTC-USD',    name: 'Bitcoin',         type: 'price' },
+  { symbol: 'BTC=F',      name: 'BTC Futuro CME',  type: 'price' },
+  { symbol: 'ETH-USD',    name: 'Ethereum',        type: 'price' },
+  { symbol: 'SOL-USD',    name: 'Solana',          type: 'price' },
+  { symbol: 'TIO=F',      name: 'Minério Ferro',   type: 'price' },
+  { symbol: 'USDBRL=X',   name: 'USD/BRL',         type: 'price' },
+  { symbol: 'DX-Y.NYB',   name: 'DXY',             type: 'index' },
+  { symbol: '^TNX',       name: 'US 10Y',          type: 'yield' },
+  { symbol: 'BR10YT=RR',  name: 'BR 10Y',          type: 'yield' },
+  { symbol: 'JP10YT=RR',  name: 'JP 10Y',          type: 'yield' },
 ];
 
 let cacheData: MarketAsset[] = [];
 let cacheTimestamp = 0;
-const CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutos
+const CACHE_TTL_MS = 30 * 1000; // 30 segundos
 
 export async function getMarketPulse(): Promise<MarketAsset[]> {
   const now = Date.now();
@@ -36,8 +45,7 @@ export async function getMarketPulse(): Promise<MarketAsset[]> {
   try {
     const symbols = TICKERS.map(t => t.symbol);
     const results = await yahooFinance.quote(symbols) as any[];
-    
-    // Map the results back to our interface format
+
     const assets: MarketAsset[] = results.map((quote: any) => {
       const tickerInfo = TICKERS.find(t => t.symbol === quote.symbol);
       return {
@@ -46,23 +54,21 @@ export async function getMarketPulse(): Promise<MarketAsset[]> {
         price: quote.regularMarketPrice || 0,
         change: quote.regularMarketChange || 0,
         changePercent: quote.regularMarketChangePercent || 0,
-        currency: quote.currency || 'USD'
+        currency: quote.currency || 'USD',
+        type: tickerInfo?.type || 'price',
       };
     });
 
-    // Ensure assets are in the requested order based on original TICKERS array
     const sortedAssets = TICKERS
       .map(t => assets.find(a => a.symbol === t.symbol) as MarketAsset)
       .filter(Boolean);
 
     cacheData = sortedAssets;
     cacheTimestamp = now;
-    
+
     return sortedAssets;
   } catch (error: any) {
-    console.error('CRITICAL YAHOO ERROR:', error);
     logger.error(`Erro ao buscar pulse do mercado: ${error.message}`);
-    // Na falha mantemos o cache persistente mesmo se expirado como fallback
-    return cacheData; 
+    return cacheData;
   }
 }
