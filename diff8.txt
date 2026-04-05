@@ -1,0 +1,90 @@
+﻿diff --git a/packages/core/src/services/CalculationEngine.ts b/packages/core/src/services/CalculationEngine.ts
+index 6126e50..ca06cc2 100644
+--- a/packages/core/src/services/CalculationEngine.ts
++++ b/packages/core/src/services/CalculationEngine.ts
+@@ -285,7 +285,13 @@ export function getPremisesRequiredFrom(
+     indexData[0].date
+   );
+ 
+-  if (endDate <= lastDataDate) return null;
++  // endDate ├® exclusiva nos c├ílculos (getBusinessDaysBetween e buildMonthSegments
++  // iteram `while (current < endDate)`), portanto o ├║ltimo dia efetivamente
++  // calculado ├® endDate - 1. Premissas s├│ s├úo necess├írias se (endDate - 1) > lastDataDate.
++  const lastNeededDate = new Date(endDate);
++  lastNeededDate.setDate(lastNeededDate.getDate() - 1);
++
++  if (lastNeededDate <= lastDataDate) return null;
+ 
+   const nextDay = new Date(lastDataDate);
+   nextDay.setDate(nextDay.getDate() + 1);
+diff --git a/packages/web/src/components/comparador/ComparadorForm.tsx b/packages/web/src/components/comparador/ComparadorForm.tsx
+index 6818dc9..474c87e 100644
+--- a/packages/web/src/components/comparador/ComparadorForm.tsx
++++ b/packages/web/src/components/comparador/ComparadorForm.tsx
+@@ -1,5 +1,6 @@
+ import React, { useState } from 'react';
+ import { Plus, Trash2, BarChart3, RefreshCw } from 'lucide-react';
++import { NumericFormat } from 'react-number-format';
+ import { CompareRequest, CompareScenarioInput, runComparison, CompareResult } from '@/lib/api';
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+ import { Input } from '@/components/ui/input';
+@@ -61,7 +62,7 @@ export function ComparadorForm({ onResult }: ComparadorFormProps) {
+   const today = new Date().toISOString().slice(0, 10);
+   const oneYearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+ 
+-  const [initialAmount, setInitialAmount] = useState('100000');
++  const [initialAmount, setInitialAmount] = useState<number>(100000);
+   const [startDate, setStartDate] = useState(oneYearAgo);
+   const [endDate, setEndDate] = useState(today);
+   const [scenarios, setScenarios] = useState<CompareScenarioInput[]>(DEFAULT_SCENARIOS);
+@@ -104,11 +105,8 @@ export function ComparadorForm({ onResult }: ComparadorFormProps) {
+     updateScenario(idx, { indexType, dayCountBasis: basis, prefixedRate: undefined, spread: undefined });
+   };
+ 
+-  const parseAmount = (v: string) => parseFloat(v.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
+-
+   const validate = (): string | null => {
+-    const amount = parseAmount(initialAmount);
+-    if (!amount || amount <= 0) return 'Informe o montante inicial.';
++    if (!initialAmount || initialAmount <= 0) return 'Informe o montante inicial.';
+     if (!startDate || !endDate) return 'Informe o per├¡odo.';
+     if (startDate >= endDate) return 'A data inicial deve ser anterior ├á final.';
+     if (scenarios.length < 2) return 'Adicione ao menos 2 cen├írios.';
+@@ -121,7 +119,7 @@ export function ComparadorForm({ onResult }: ComparadorFormProps) {
+   };
+ 
+   const buildRequest = (scenariosToUse: CompareScenarioInput[]): CompareRequest => ({
+-    initialAmount: parseAmount(initialAmount),
++    initialAmount,
+     startDate: new Date(startDate + 'T12:00:00').toISOString(),
+     endDate: new Date(endDate + 'T12:00:00').toISOString(),
+     scenarios: scenariosToUse,
+@@ -213,15 +211,19 @@ export function ComparadorForm({ onResult }: ComparadorFormProps) {
+ 
+           <div className="space-y-1.5">
+             <Label>Montante Inicial</Label>
+-            <div className="relative">
+-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">R$</span>
+-              <Input
+-                className="pl-9 font-mono"
+-                placeholder="100.000,00"
+-                value={initialAmount}
+-                onChange={e => setInitialAmount(e.target.value)}
+-              />
+-            </div>
++            <NumericFormat
++              customInput={Input}
++              thousandSeparator="."
++              decimalSeparator=","
++              prefix="R$ "
++              decimalScale={2}
++              fixedDecimalScale
++              allowNegative={false}
++              placeholder="R$ 100.000,00"
++              value={initialAmount || ''}
++              onValueChange={v => setInitialAmount(v.floatValue || 0)}
++              className="font-mono"
++            />
+           </div>
+ 
+           <div className="grid grid-cols-2 gap-3">
