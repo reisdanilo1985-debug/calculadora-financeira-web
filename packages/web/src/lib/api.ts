@@ -454,4 +454,89 @@ export async function getWaccMarketParams(): Promise<{ rf: number; erp: number; 
   return data;
 }
 
+// ── Retirement Architect ──────────────────────────────────────────────────────
+
+export interface RetirementMemorialStep {
+  titulo: string;
+  formula: string;
+  formulaComValores: string;
+  resultado: number;
+  unidade: string;
+  descricao: string;
+}
+
+export interface RetirementAlert {
+  tipo: 'danger' | 'warning' | 'info';
+  mensagem: string;
+}
+
+export interface RetirementYearRow {
+  ano: number;
+  idade: number;
+  patrimonioInicio: number;
+  aportesAno: number;
+  retornoNominal: number;
+  gastoAno: number;
+  beneficioINSS: number;
+  rendaAluguel: number;
+  patrimonioFim: number;
+  taxaRetirada: number;
+  esgotado: boolean;
+}
+
+export interface RetirementResultData {
+  probabilidadeSucesso: number;
+  saldoFinalP5: number;
+  saldoFinalP50: number;
+  saldoFinalP95: number;
+  beneficioINSSMensal: number;
+  rendaPatrimonioMensal: number;
+  rendaTotalMensal: number;
+  anoEsgotamentoP5: number | null;
+  anoEsgotamentoP50: number | null;
+  taxaRetiradaInicial: number;
+  patrimonioAcumuladoAposentadoria: number;
+  totalAportado: number;
+  totalRendimento: number;
+  projecaoAnualP50: RetirementYearRow[];
+  memorial: RetirementMemorialStep[];
+  alertas: RetirementAlert[];
+}
+
+export interface RetirementRequest {
+  idadeAtual: number;
+  idadeAposentadoria: number;
+  expectativaVida?: number;
+  genero: 'M' | 'F';
+  patrimonioTributavel: number;
+  saldoPGBL: number;
+  saldoVGBL: number;
+  rendaAluguel: number;
+  aporteMensal: number;
+  aportePGBL: number;
+  aporteVGBL: number;
+  incluirINSS: boolean;
+  salarioContribuicao: number;
+  tempoContribuicaoAnos: number;
+  gastoMensalDesejado: number;
+  incluirInflacaoMedica: boolean;
+  gastoMensalSaude: number;
+  perfilRisco: 'conservador' | 'moderado' | 'agressivo';
+  ipcaMeta?: number;
+  tabelaPGBL?: 'regressiva' | 'progressiva';
+  numeroSimulacoes?: number;
+}
+
+/** Executa a simulação de aposentadoria (Monte Carlo) */
+export async function runRetirementCalculation(request: RetirementRequest): Promise<RetirementResultData> {
+  const { data } = await api.post<RetirementResultData>('/retirement/calcular', request);
+  return data;
+}
+
+/** Busca perfis de risco calibrados para o Brasil */
+export async function getRetirementPerfis(): Promise<{ id: string; retornoRealAnual: number; volatilidade: number; descricao: string }[]> {
+  const { data } = await api.get('/retirement/perfis');
+  return data;
+}
+
 export default api;

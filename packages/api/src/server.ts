@@ -8,6 +8,7 @@ import { compareRouter } from './routes/compare';
 import { exchangeRouter } from './routes/exchange';
 import { marketRouter } from './routes/market';
 import { waccRouter } from './routes/wacc';
+import { retirementRouter } from './routes/retirement';
 import { startCronJobs } from './jobs/cronTasks';
 import logger from './middleware/logger';
 
@@ -15,23 +16,8 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middlewares
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:5174',
-  'http://localhost:3000',
-  ...(process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map(o => o.trim()) : []),
-];
-
 app.use(cors({
-  origin: (origin, callback) => {
-    // Permite requisições sem origin (ex: Postman, curl, health checks)
-    if (!origin) return callback(null, true);
-    // Permite qualquer subdomínio da Vercel
-    if (origin.endsWith('.vercel.app') || origin.endsWith('.onrender.com')) return callback(null, true);
-    // Permite origens explicitamente configuradas
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    callback(new Error(`Origem bloqueada pelo CORS: ${origin}`));
-  },
+  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   credentials: true,
 }));
 
@@ -55,6 +41,7 @@ app.use('/api/comparar', compareRouter);
 app.use('/api/exchange', exchangeRouter);
 app.use('/api/market', marketRouter);
 app.use('/api/wacc', waccRouter);
+app.use('/api/retirement', retirementRouter);
 
 // Health check
 app.get('/health', (_req, res) => {

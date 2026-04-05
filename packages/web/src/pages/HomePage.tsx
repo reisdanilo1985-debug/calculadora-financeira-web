@@ -12,6 +12,7 @@ import { IndexAdmin } from '@/components/admin/IndexAdmin';
 import { ExchangePanel } from '@/components/exchange/ExchangePanel';
 import { PtaxPanel } from '@/components/ptax/PtaxPanel';
 import { WaccPanel } from '@/components/wacc/WaccPanel';
+import { RetirementPanel } from '@/components/retirement/RetirementPanel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CalculationResult, CompareResult } from '@/lib/api';
@@ -150,6 +151,12 @@ export function HomePage() {
               className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'wacc' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
             >
               WACC (Damodaran)
+            </button>
+            <button
+              onClick={() => setActiveTab('aposentadoria')}
+              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'aposentadoria' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Aposentadoria
             </button>
             <button
               onClick={() => setActiveTab('indices')}
@@ -294,6 +301,11 @@ export function HomePage() {
             {/* Tab: WACC */}
             <TabsContent value="wacc" className="flex-1 m-0 data-[state=active]:flex flex-col">
               <WaccPanel />
+            </TabsContent>
+
+            {/* Tab: Aposentadoria */}
+            <TabsContent value="aposentadoria" className="flex-1 m-0 data-[state=active]:flex flex-col">
+              <RetirementPanel />
             </TabsContent>
 
           </Tabs>
