@@ -40,9 +40,10 @@ export function FuturePremisesModal({
   });
 
   const isMonthly = ['IPCA', 'IGPM', 'INCC'].includes(indexType);
-  const rateLabel = isMonthly ? 'Taxa Mensal (% a.m.)' : 'Taxa Anual (% a.a.)';
-  const ratePlaceholder = isMonthly ? 'ex: 0.45' : 'ex: 10.5';
-  const rateUnit = isMonthly ? '% a.m.' : '% a.a.';
+  const isSOFR = indexType === 'SOFR';
+  const rateLabel = isMonthly ? 'Taxa Mensal (% a.m.)' : isSOFR ? 'Taxa Diária SOFR (% a.d.)' : 'Taxa Anual (% a.a.)';
+  const ratePlaceholder = isMonthly ? 'ex: 0.45' : isSOFR ? 'ex: 5.30' : 'ex: 10.5';
+  const rateUnit = isMonthly ? '% a.m.' : isSOFR ? '% a.d.' : '% a.a.';
 
   const canReplicate = lastAvailableRate != null && lastAvailableRate > 0;
 

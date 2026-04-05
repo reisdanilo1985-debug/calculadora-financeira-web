@@ -26,9 +26,10 @@ interface ScenarioPremisesSectionProps {
 
 function ScenarioPremisesSection({ info, calcEndDate, onUpdate }: ScenarioPremisesSectionProps) {
   const isMonthly = ['IPCA', 'IGPM', 'INCC'].includes(info.indexType);
-  const rateLabel = isMonthly ? 'Taxa Mensal (% a.m.)' : 'Taxa Anual (% a.a.)';
-  const ratePlaceholder = isMonthly ? 'ex: 0.45' : 'ex: 10.5';
-  const rateUnit = isMonthly ? '% a.m.' : '% a.a.';
+  const isSOFR = info.indexType === 'SOFR';
+  const rateLabel = isMonthly ? 'Taxa Mensal (% a.m.)' : isSOFR ? 'Taxa Diária SOFR (% a.d.)' : 'Taxa Anual (% a.a.)';
+  const ratePlaceholder = isMonthly ? 'ex: 0.45' : isSOFR ? 'ex: 5.30' : 'ex: 10.5';
+  const rateUnit = isMonthly ? '% a.m.' : isSOFR ? '% a.d.' : '% a.a.';
 
   const [form, setForm] = useState({
     startDate: info.premisesRequiredFrom.slice(0, 10),
@@ -124,7 +125,7 @@ function ScenarioPremisesSection({ info, calcEndDate, onUpdate }: ScenarioPremis
                 {formatDate(new Date(p.startDate))} → {formatDate(new Date(p.endDate))}
               </span>
               <span className="font-semibold text-projected">
-                {p.rate}%{isMonthly ? ' a.m.' : ' a.a.'}
+                {p.rate}%{isMonthly ? ' a.m.' : isSOFR ? ' a.d.' : ' a.a.'}
               </span>
               <Button
                 variant="ghost"
