@@ -1,6 +1,0 @@
-﻿ M packages/core/src/services/CalculationEngine.ts
- M packages/web/src/components/comparador/ComparadorForm.tsx
-?? diff.txt
-?? packages/core/dist/
-?? status.txt
-?? status8.txt
