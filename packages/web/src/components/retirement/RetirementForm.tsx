@@ -103,7 +103,7 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
               Patrimônio Tributável
-              <HelpCircle className="h-3 w-3 text-muted-foreground/60" title="CDB, Tesouro Direto, ações, FIIs, LCI/LCA" />
+              <span title="CDB, Tesouro Direto, ações, FIIs, LCI/LCA"><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
             </Label>
             <Input type="number" value={form.patrimonioTributavel || ''}
               onChange={e => set({ patrimonioTributavel: +e.target.value || 0 })}
@@ -112,7 +112,7 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
               Saldo PGBL
-              <HelpCircle className="h-3 w-3 text-muted-foreground/60" title="Plano Gerador de Benefício Livre — IR na saída sobre valor total" />
+              <span title="Plano Gerador de Benefício Livre — IR na saída sobre valor total"><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
             </Label>
             <Input type="number" value={form.saldoPGBL || ''}
               onChange={e => set({ saldoPGBL: +e.target.value || 0 })}
@@ -121,7 +121,7 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
               Saldo VGBL
-              <HelpCircle className="h-3 w-3 text-muted-foreground/60" title="Vida Gerador de Benefício Livre — IR só sobre o rendimento" />
+              <span title="Vida Gerador de Benefício Livre — IR só sobre o rendimento"><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
             </Label>
             <Input type="number" value={form.saldoVGBL || ''}
               onChange={e => set({ saldoVGBL: +e.target.value || 0 })}
@@ -130,7 +130,7 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
               Renda de Aluguel (R$/mês)
-              <HelpCircle className="h-3 w-3 text-muted-foreground/60" title="Renda de imóveis. Isenta de PGBL/VGBL, tributada como pessoa física" />
+              <span title="Renda de imóveis. Isenta de PGBL/VGBL, tributada como pessoa física"><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
             </Label>
             <Input type="number" value={form.rendaAluguel || ''}
               onChange={e => set({ rendaAluguel: +e.target.value || 0 })}
@@ -157,7 +157,7 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
               PGBL
-              <HelpCircle className="h-3 w-3 text-muted-foreground/60" title="Máx. 12% da renda bruta anual. Dedutível no IR." />
+              <span title="Máx. 12% da renda bruta anual. Dedutível no IR."><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
             </Label>
             <Input type="number" value={form.aportePGBL || ''}
               onChange={e => set({ aportePGBL: +e.target.value || 0 })}
@@ -202,7 +202,7 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
                 Tempo de Contribuição (anos)
-                <HelpCircle className="h-3 w-3 text-muted-foreground/60" title="Anos já contribuídos. O motor soma os anos restantes até a aposentadoria." />
+                <span title="Anos já contribuídos. O motor soma os anos restantes até a aposentadoria."><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
               </Label>
               <Input type="number" value={form.tempoContribuicaoAnos || ''}
                 onChange={e => set({ tempoContribuicaoAnos: +e.target.value || 0 })}
@@ -224,7 +224,7 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
               Gasto Mensal Desejado (R$ de hoje)
-              <HelpCircle className="h-3 w-3 text-muted-foreground/60" title="Valor em R$ atuais. O motor corrige pela IPCA até a data de aposentadoria." />
+              <span title="Valor em R$ atuais. O motor corrige pela IPCA até a data de aposentadoria."><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
             </Label>
             <Input type="number" value={form.gastoMensalDesejado || ''}
               onChange={e => set({ gastoMensalDesejado: +e.target.value || 0 })}
@@ -233,7 +233,7 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
               Gasto Saúde (R$/mês)
-              <HelpCircle className="h-3 w-3 text-muted-foreground/60" title="Plano de saúde e despesas médicas. Cresce IPCA + 3% a.a." />
+              <span title="Plano de saúde e despesas médicas. Cresce IPCA + 3% a.a."><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
             </Label>
             <div className="flex items-center gap-2">
               <Input type="number" value={form.gastoMensalSaude || ''}
@@ -278,7 +278,7 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
               Meta IPCA (% a.a.)
-              <HelpCircle className="h-3 w-3 text-muted-foreground/60" title="Inflação esperada para correção dos gastos. Meta CMN 2025: 3,0%." />
+              <span title="Inflação esperada para correção dos gastos. Meta CMN 2025: 3,0%."><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
             </Label>
             <div className="relative">
               <Input type="number" step="0.1" value={form.ipcaMeta || ''}
@@ -302,7 +302,7 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
               Simulações Monte Carlo
-              <HelpCircle className="h-3 w-3 text-muted-foreground/60" title="Quanto mais simulações, mais preciso. Máximo: 5.000." />
+              <span title="Quanto mais simulações, mais preciso. Máximo: 5.000."><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
             </Label>
             <select
               className="w-full h-9 rounded-md border border-input bg-background/50 px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
