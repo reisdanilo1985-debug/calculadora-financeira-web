@@ -15,9 +15,20 @@ import logger from './middleware/logger';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middlewares
+// Middlewares — aceita múltiplas origens separadas por vírgula em CORS_ORIGIN
+const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map(o => o.trim());
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    // Permite requests sem origin (curl, Render health check, etc.)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    // Permite qualquer subdomínio .vercel.app e .onrender.com
+    if (/\.(vercel\.app|onrender\.com)$/.test(origin)) return callback(null, true);
+    callback(new Error(`CORS: origem não permitida — ${origin}`));
+  },
   credentials: true,
 }));
 
