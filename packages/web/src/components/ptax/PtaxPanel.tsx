@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Download, Landmark, AlertCircle } from 'lucide-react';
+import { Download, Landmark, AlertCircle, HelpCircle, X } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -36,11 +36,93 @@ const COLORS: Record<string, string> = {
   PYG: '#ef4444', 
 };
 
+const BULLETIN_HELP = [
+  {
+    icon: '🔒',
+    title: 'Fechamento Oficial (Padrão)',
+    description: 'A cotação mais usada no mercado financeiro brasileiro. É publicada no final do dia útil e serve como referência oficial para contratos, exportações, importações e conversões jurídicas.',
+    when: 'Atualização de contratos em dólar, cálculo de dívidas cambiais, processos judiciais com correção em moeda estrangeira.',
+  },
+  {
+    icon: '🌅',
+    title: 'Abertura',
+    description: 'Primeira cotação do dia, publicada logo no início do pregão. Reflete o preço do dólar antes de qualquer movimentação significativa do mercado naquele dia.',
+    when: 'Comparar o comportamento do dólar ao longo do dia, análises de variação intradiária.',
+  },
+  {
+    icon: '🔄',
+    title: 'Boletim Intermediário',
+    description: 'Cotações divulgadas ao longo do dia útil, entre a abertura e o fechamento. Podem existir um ou mais boletins intermediários dependendo da volatilidade do mercado.',
+    when: 'Análises de volatilidade intradiária, acompanhamento em tempo real durante o pregão.',
+  },
+  {
+    icon: '📋',
+    title: 'Todos os Boletins no Dia',
+    description: 'Exibe todos os registros publicados pelo BCB em cada dia: abertura, intermediários e fechamento juntos. Gera um volume maior de dados.',
+    when: 'Análises técnicas detalhadas, estudos de comportamento cambial ao longo do dia.',
+  },
+];
+
+function BulletinHelpModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative z-10 w-full max-w-lg glass-card rounded-xl border border-white/10 shadow-2xl p-6 space-y-5 max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold">O que é cada Boletim PTAX?</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              O Banco Central publica a cotação oficial (PTAX) em boletins ao longo do dia. Cada um representa um momento diferente do mercado.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="shrink-0 p-1 rounded-md hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Items */}
+        <div className="space-y-3">
+          {BULLETIN_HELP.map(item => (
+            <div key={item.title} className="rounded-lg bg-white/5 border border-white/8 p-4 space-y-1.5">
+              <p className="text-sm font-semibold">
+                {item.icon} {item.title}
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed">{item.description}</p>
+              <p className="text-xs text-primary/80">
+                <span className="font-semibold text-foreground/60">Quando usar: </span>
+                {item.when}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        {/* Tip */}
+        <div className="rounded-lg bg-primary/10 border border-primary/20 px-4 py-3">
+          <p className="text-xs text-primary/90">
+            <span className="font-semibold">💡 Dica:</span> Para a maioria dos casos — contratos, relatórios financeiros e correções monetárias — use sempre o <strong>Fechamento Oficial</strong>.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function PtaxPanel() {
   const [startDate, setStartDate] = useState(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
   const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
   const [currency, setCurrency] = useState('USD');
   const [bulletin, setBulletin] = useState('Fechamento');
+  const [showHelp, setShowHelp] = useState(false);
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -105,6 +187,8 @@ export function PtaxPanel() {
   }, [summary]);
 
   return (
+    <>
+    {showHelp && <BulletinHelpModal onClose={() => setShowHelp(false)} />}
     <div className="flex-1 grid grid-cols-1 lg:grid-cols-[380px_1fr] max-w-[1600px] mx-auto w-full">
       {/* Sidebar: Form */}
       <aside className="border-r border-white/5 overflow-y-auto bg-card/20 backdrop-blur-sm glass-panel mb-0 rounded-none border-y-0 border-l-0 p-5">
@@ -134,7 +218,17 @@ export function PtaxPanel() {
           </div>
           
           <div className="space-y-1.5">
-             <Label>Tipo de Boletim PTAX</Label>
+            <div className="flex items-center justify-between">
+              <Label>Tipo de Boletim PTAX</Label>
+              <button
+                onClick={() => setShowHelp(true)}
+                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors"
+                type="button"
+              >
+                <HelpCircle className="h-3.5 w-3.5" />
+                O que é cada boletim?
+              </button>
+            </div>
              <select
                value={bulletin}
                onChange={e => setBulletin(e.target.value)}
@@ -337,5 +431,6 @@ export function PtaxPanel() {
         )}
       </section>
     </div>
+    </>
   );
 }
