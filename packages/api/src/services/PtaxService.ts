@@ -109,9 +109,11 @@ export class PtaxService {
     const quotes = await this.getCurrencyPeriod(currency, startDate, endDate);
     
     // Filtrar pelo boletim desejado (usualmente Fechamento)
-    const filteredQuotes = bulletin === 'Todos' 
-      ? quotes 
-      : quotes.filter(q => q.bulletinType === bulletin);
+    // A API Olinda retorna tipoBoletim com sufixos variáveis ("Fechamento PTAX",
+    // "Abertura PTAX", etc.) — usar includes para match parcial case-insensitive
+    const filteredQuotes = bulletin === 'Todos'
+      ? quotes
+      : quotes.filter(q => q.bulletinType.toLowerCase().includes(bulletin.toLowerCase()));
     
     if (filteredQuotes.length === 0) return null;
 
