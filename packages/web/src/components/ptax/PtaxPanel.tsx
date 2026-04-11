@@ -71,7 +71,7 @@ function BulletinHelpModal({ onClose }: { onClose: () => void }) {
     >
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
-        className="relative z-10 w-full max-w-lg glass-card rounded-xl border border-white/10 shadow-2xl p-6 space-y-5 max-h-[90vh] overflow-y-auto"
+        className="relative z-10 w-full max-w-lg glass-card rounded-xl border border-white/10 shadow-2xl p-6 space-y-5 max-h-[80vh] overflow-y-scroll scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
