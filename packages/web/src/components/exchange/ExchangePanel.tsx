@@ -138,21 +138,26 @@ function CurrencyConverter() {
 
       {/* Result */}
       {converted !== null && amount > 0 ? (
-        <div className="rounded-lg bg-black/30 border border-white/10 p-3 text-center">
-          <p className="text-2xl font-bold text-primary font-mono">
-            {fmt(converted, to)} <span className="text-base font-semibold text-foreground">{to}</span>
+        <div className="rounded-xl bg-black/30 border border-primary/20 p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1 text-center">
+            Resultado
+          </p>
+          <p className="font-display font-bold text-primary tabular-nums text-center leading-none"
+             style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)' }}>
+            {fmt(converted, to)}
+            <span className="ml-2 text-lg font-semibold text-foreground/70">{to}</span>
           </p>
           {rateLabel && (
-            <p className="text-[11px] text-muted-foreground mt-1">{rateLabel}</p>
+            <p className="text-[11px] text-muted-foreground mt-2 text-center">{rateLabel}</p>
           )}
           {rateDate && (
-            <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-              Cotação BCB: {rateDate.split('-').reverse().join('/')}
+            <p className="text-[10px] text-muted-foreground/50 mt-0.5 text-center">
+              BCB · {rateDate.split('-').reverse().join('/')}
             </p>
           )}
         </div>
       ) : (
-        <div className="rounded-lg bg-black/30 border border-white/10 p-3 text-center">
+        <div className="rounded-xl bg-black/30 border border-white/10 p-4 text-center">
           <p className="text-xs text-muted-foreground">
             {latestRates.length === 0 ? 'Carregando cotações…' : 'Informe um valor para converter'}
           </p>
@@ -346,40 +351,61 @@ export function ExchangePanel() {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {summaries.map(s => (
-                <Card key={s.currency} className="glass-card">
-                  <CardHeader className="py-3 pb-0">
-                    <CardTitle className="text-sm font-semibold">{s.currency} / BRL</CardTitle>
-                  </CardHeader>
-                  <CardContent className="py-3">
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Média:</span>
-                        <span className="font-mono">R$ {s.averageRate.toFixed(4)}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Mínima:</span>
-                        <span className="font-mono text-emerald-500">
-                          R$ {s.minRate.toFixed(4)}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {summaries.map(s => {
+                const variation = ((s.maxRate - s.minRate) / s.minRate) * 100;
+                const currencyColor = COLORS[s.currency] || 'hsl(var(--primary))';
+                return (
+                  <Card key={s.currency} className="glass-card card-hover">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                            {s.currency} / BRL
+                          </p>
+                          <p className="text-xs text-muted-foreground/60">{CURRENCY_NAMES[s.currency]}</p>
+                        </div>
+                        <span
+                          className="text-[11px] font-bold px-2 py-0.5 rounded-full font-mono"
+                          style={{ backgroundColor: `${currencyColor}22`, color: currencyColor }}
+                        >
+                          ±{variation.toFixed(1)}%
                         </span>
                       </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Máxima:</span>
-                        <span className="font-mono text-rose-500">
-                          R$ {s.maxRate.toFixed(4)}
-                        </span>
+
+                      {/* Featured average */}
+                      <p
+                        className="font-display font-bold tabular-nums leading-none mb-3"
+                        style={{ fontSize: '1.5rem', color: currencyColor }}
+                      >
+                        R$ {s.averageRate.toFixed(4)}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground/60 -mt-2 mb-3">Média do período</p>
+
+                      {/* Min / Max row */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-md bg-emerald-500/10 px-2 py-1.5">
+                          <p className="text-[9px] uppercase tracking-wider text-emerald-400/70 font-semibold">Mín</p>
+                          <p className="text-xs font-mono font-semibold text-emerald-400">R$ {s.minRate.toFixed(4)}</p>
+                          <p className="text-[9px] text-muted-foreground/50 font-mono">{s.minRateDate.split('-').reverse().join('/')}</p>
+                        </div>
+                        <div className="rounded-md bg-rose-500/10 px-2 py-1.5">
+                          <p className="text-[9px] uppercase tracking-wider text-rose-400/70 font-semibold">Máx</p>
+                          <p className="text-xs font-mono font-semibold text-rose-400">R$ {s.maxRate.toFixed(4)}</p>
+                          <p className="text-[9px] text-muted-foreground/50 font-mono">{s.maxRateDate.split('-').reverse().join('/')}</p>
+                        </div>
                       </div>
+
                       {s.crossRateUSD && s.currency !== 'USD' && (
-                        <div className="flex justify-between text-sm pt-2 border-t border-white/5 mt-1">
-                          <span className="text-muted-foreground text-xs">Média {s.currency}/USD (Cross):</span>
-                          <span className="font-mono text-xs">{s.crossRateUSD.toFixed(4)}</span>
+                        <div className="flex justify-between text-[11px] pt-2.5 mt-2.5 border-t border-white/5">
+                          <span className="text-muted-foreground">{s.currency}/USD cross</span>
+                          <span className="font-mono text-foreground/70">{s.crossRateUSD.toFixed(4)}</span>
                         </div>
                       )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
 
             {/* Chart */}

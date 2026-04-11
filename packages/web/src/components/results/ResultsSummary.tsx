@@ -188,25 +188,50 @@ export function ResultsSummary({ result }: ResultsSummaryProps) {
         <FluxoCompletoSummary result={result} />
       ) : (
         /* Standard T1/T3/T5 */
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <StatCard icon={DollarSign} label="Montante Inicial" value={formatCurrency(result.initialAmount)} size="small" />
-          <StatCard icon={TrendingUp} label="Valor Corrigido" value={formatCurrency(result.finalAmount)} size="large" />
-          <StatCard
-            icon={Percent}
-            label="Retorno Acumulado"
-            value={`${isPositive ? '+' : ''}${result.variationPercent.toFixed(4)}%`}
-            sub={`Fator: ${formatFactor(result.accumulatedFactor)}`}
-            valueColor={variationColor}
-          />
-          <StatCard
-            icon={Calendar}
-            label={result.totalAmortized > 0 ? 'Ganho / Amortizado' : 'Ganho Bruto'}
-            value={formatCurrency(gain)}
-            sub={result.totalAmortized > 0
-              ? `Amortizado: ${formatCurrency(result.totalAmortized)}`
-              : undefined}
-            valueColor={gainColor}
-          />
+        <div className="space-y-4">
+          {/* Hero impact block */}
+          <div className="glass-card rounded-xl p-5 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+                Valor Corrigido
+              </p>
+              <p
+                className="font-display font-bold leading-none tabular-nums"
+                style={{ fontSize: 'clamp(2rem, 5vw, 3.5rem)', color: 'hsl(var(--primary))' }}
+              >
+                {formatCurrency(result.finalAmount)}
+              </p>
+            </div>
+            <div className="flex flex-col sm:items-end gap-1">
+              <span className={`text-2xl font-bold font-mono tabular-nums leading-none ${variationColor}`}>
+                {isPositive ? '+' : ''}{result.variationPercent.toFixed(4)}%
+              </span>
+              <span className="text-xs text-muted-foreground font-mono">
+                Fator {formatFactor(result.accumulatedFactor)}
+              </span>
+            </div>
+          </div>
+
+          {/* Supporting stats */}
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+            <StatCard icon={DollarSign} label="Montante Inicial" value={formatCurrency(result.initialAmount)} size="small" />
+            <StatCard
+              icon={Calendar}
+              label={result.totalAmortized > 0 ? 'Ganho / Amortizado' : 'Ganho Bruto'}
+              value={formatCurrency(gain)}
+              sub={result.totalAmortized > 0
+                ? `Amortizado: ${formatCurrency(result.totalAmortized)}`
+                : undefined}
+              valueColor={gainColor}
+            />
+            <StatCard
+              icon={TrendingUp}
+              label="Indexador"
+              value={INDEX_LABELS[result.indexType] || result.indexType}
+              sub={BASIS_LABELS[result.dayCountBasis]}
+              size="small"
+            />
+          </div>
         </div>
       )}
 

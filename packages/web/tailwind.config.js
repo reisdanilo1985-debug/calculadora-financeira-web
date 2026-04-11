@@ -78,6 +78,8 @@ export default {
         "fade-in": "fade-in 0.3s ease-out",
       },
       fontFamily: {
+        display: ["Manrope", "Inter", "system-ui", "sans-serif"],
+        sans: ["Inter", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "Fira Code", "monospace"],
       },
     },
