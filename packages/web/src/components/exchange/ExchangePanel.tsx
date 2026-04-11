@@ -143,7 +143,7 @@ function CurrencyConverter() {
             Resultado
           </p>
           <p className="font-display font-bold text-primary tabular-nums text-center leading-none"
-             style={{ fontSize: 'clamp(1.75rem, 4vw, 2.75rem)' }}>
+             style={{ fontSize: 'clamp(1.5rem, 2.5vw, 2rem)' }}>
             {fmt(converted, to)}
             <span className="ml-2 text-lg font-semibold text-foreground/70">{to}</span>
           </p>
