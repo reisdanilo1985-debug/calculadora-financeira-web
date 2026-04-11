@@ -197,7 +197,7 @@ export function ResultsSummary({ result }: ResultsSummaryProps) {
               </p>
               <p
                 className="font-display font-bold leading-none tabular-nums"
-                style={{ fontSize: 'clamp(2rem, 5vw, 3.5rem)', color: 'hsl(var(--primary))' }}
+                style={{ fontSize: 'clamp(1.5rem, 2.5vw, 2rem)', color: 'hsl(var(--primary))' }}
               >
                 {formatCurrency(result.finalAmount)}
               </p>
