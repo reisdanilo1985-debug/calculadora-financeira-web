@@ -59,6 +59,99 @@ function validateInput(input: CalculationInput): void {
   }
 }
 
+/**
+ * Insere linhas-âncora nas datas de split que não tenham match exato no array
+ * de rows. A âncora copia accumulatedFactor/balance da linha anterior mais
+ * próxima (assume que entre rows não houve variação — válido para CDI/Selic
+ * em fins de semana/feriados, e Prefixada-DU252 em não-úteis).
+ */
+function insertAnchorRows(
+  rows: CalculationMemoryRow[],
+  splitDates: Date[]
+): CalculationMemoryRow[] {
+  if (rows.length === 0) return rows;
+  const existingDates = new Set<number>();
+  for (const r of rows) {
+    const d = new Date(r.date);
+    d.setHours(0, 0, 0, 0);
+    existingDates.add(d.getTime());
+  }
+
+  const sortedSplits = [...splitDates]
+    .map(d => {
+      const x = new Date(d);
+      x.setHours(0, 0, 0, 0);
+      return x;
+    })
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  const result: CalculationMemoryRow[] = [];
+  let splitIdx = 0;
+  let prevAccFactor = 1;
+  let prevBalance = rows[0].balance / rows[0].accumulatedFactor; // initialAmount aprox.
+  let prevIsProjected = false;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowDate = new Date(row.date);
+    rowDate.setHours(0, 0, 0, 0);
+    const rowTime = rowDate.getTime();
+
+    // Insere âncoras para qualquer split anterior a esta linha
+    while (
+      splitIdx < sortedSplits.length &&
+      sortedSplits[splitIdx].getTime() < rowTime
+    ) {
+      const splitTime = sortedSplits[splitIdx].getTime();
+      if (!existingDates.has(splitTime)) {
+        result.push({
+          date: new Date(splitTime),
+          indexRate: 0,
+          dailyFactor: 1,
+          accumulatedFactor: prevAccFactor,
+          balance: prevBalance,
+          isProjected: prevIsProjected,
+          description: 'Âncora (data de amortização em dia não-útil)',
+        });
+        existingDates.add(splitTime);
+      }
+      splitIdx++;
+    }
+
+    // Avança o índice para todos os splits que coincidem com esta data
+    while (
+      splitIdx < sortedSplits.length &&
+      sortedSplits[splitIdx].getTime() === rowTime
+    ) {
+      splitIdx++;
+    }
+
+    result.push(row);
+    prevAccFactor = row.accumulatedFactor;
+    prevBalance = row.balance;
+    prevIsProjected = row.isProjected;
+  }
+
+  // Splits posteriores à última linha: inserir ao final
+  while (splitIdx < sortedSplits.length) {
+    const splitTime = sortedSplits[splitIdx].getTime();
+    if (!existingDates.has(splitTime)) {
+      result.push({
+        date: new Date(splitTime),
+        indexRate: 0,
+        dailyFactor: 1,
+        accumulatedFactor: prevAccFactor,
+        balance: prevBalance,
+        isProjected: prevIsProjected,
+        description: 'Âncora (data de amortização em dia não-útil)',
+      });
+    }
+    splitIdx++;
+  }
+
+  return result;
+}
+
 function detectProjections(
   rows: CalculationMemoryRow[]
 ): { hasProjections: boolean; projectionStartDate?: Date } {
@@ -208,10 +301,31 @@ export function calculate(input: CalculationInput): CalculationResult {
     throw new Error(`Indexador não suportado: ${input.indexType}`);
   }
 
-  let rows = engine(input);
+  // Expande amortizações periódicas antes de chamar o engine, para que
+  // o engine possa gerar linhas-âncora nas datas exatas das amortizações.
+  const expandedAmorts = input.amortizations && input.amortizations.length > 0
+    ? expandPeriodicAmortizations(input.amortizations)
+    : [];
+  const splitDates = expandedAmorts.map(a => {
+    const d = new Date(a.date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
+
+  let rows = engine({ ...input, splitDates });
 
   if (rows.length === 0) {
     throw new Error('Nenhum dado de índice disponível para o período informado.');
+  }
+
+  // Garante que toda data de amortização tenha uma linha exata. Para engines
+  // que iteram apenas dias úteis (CDI/Selic, Prefixada-DU252), uma amortização
+  // em fim de semana ou feriado fica sem match. Inserimos uma linha-âncora
+  // copiando o fator/saldo da linha imediatamente anterior (sem variação no
+  // dia não-útil). MonthlyIndexEngine já trata splits internamente via
+  // pro-rata, então âncoras aqui apenas preenchem o que faltar.
+  if (splitDates.length > 0) {
+    rows = insertAnchorRows(rows, splitDates);
   }
 
   // T5 – aplica juros remuneratórios (simples ou compostos) sobre a correção
@@ -240,9 +354,8 @@ export function calculate(input: CalculationInput): CalculationResult {
     };
   }
 
-  // Aplica amortizações
-  if (input.amortizations && input.amortizations.length > 0) {
-    const expandedAmorts = expandPeriodicAmortizations(input.amortizations);
+  // Aplica amortizações (já expandidas acima)
+  if (expandedAmorts.length > 0) {
     rows = applyAmortizations(rows, expandedAmorts);
   }
 

@@ -59,6 +59,7 @@ interface MonthSegment {
   daysUsed: number;
   totalDaysInMonth: number;
   startOfSegment: Date;
+  endOfSegment: Date;
 }
 
 function buildMonthSegments(startDate: Date, endDate: Date, basis: DayCountBasis): MonthSegment[] {
@@ -73,7 +74,6 @@ function buildMonthSegments(startDate: Date, endDate: Date, basis: DayCountBasis
     const year = current.getFullYear();
     const month = current.getMonth();
     const firstOfMonth = new Date(year, month, 1);
-    const lastOfMonth = new Date(year, month + 1, 0); // último dia do mês
 
     // Fim do segmento: início do próximo mês ou data final, o que vier primeiro
     const segmentEnd = new Date(Math.min(new Date(year, month + 1, 1).getTime(), end.getTime()));
@@ -89,6 +89,7 @@ function buildMonthSegments(startDate: Date, endDate: Date, basis: DayCountBasis
       daysUsed,
       totalDaysInMonth: totalDays,
       startOfSegment: new Date(current),
+      endOfSegment: new Date(segmentEnd),
     });
 
     current = new Date(year, month + 1, 1);
@@ -112,7 +113,17 @@ export function calculateMonthlyIndex(input: CalculationInput): CalculationMemor
     futurePremises = [],
     dayCountBasis,
     spread,
+    splitDates = [],
   } = input;
+
+  // Normaliza splits e ordena
+  const normalizedSplits = splitDates
+    .map(d => {
+      const x = new Date(d);
+      x.setHours(0, 0, 0, 0);
+      return x;
+    })
+    .sort((a, b) => a.getTime() - b.getTime());
 
   // Mapa de taxas mensais: YYYY-MM → { value, isProjected }
   const rateMap = buildMonthlyRateMap(indexData);
@@ -155,11 +166,38 @@ export function calculateMonthlyIndex(input: CalculationInput): CalculationMemor
     const proRataExponent = new Decimal(seg.daysUsed).div(seg.totalDaysInMonth);
     const monthFactor = new Decimal(1 + monthlyRate / 100).pow(proRataExponent);
 
+    const segStartFactor = accumulatedFactor;
+    const segStartBalance = currentBalance;
+    const segStartTime = seg.startOfSegment.getTime();
+    const segEndTime = seg.endOfSegment.getTime();
+
+    // Insere linhas-âncora para datas de split que caiam dentro deste segmento
+    // (exclusivo nos extremos para evitar duplicar a linha de fronteira).
+    const anchors = normalizedSplits.filter(
+      d => d.getTime() > segStartTime && d.getTime() < segEndTime
+    );
+    for (const anchorDate of anchors) {
+      const elapsedDays = Math.round((anchorDate.getTime() - segStartTime) / 86400000);
+      const partialExponent = new Decimal(elapsedDays).div(seg.totalDaysInMonth);
+      const partialFactor = new Decimal(1 + monthlyRate / 100).pow(partialExponent);
+      const anchorAccFactor = segStartFactor.mul(partialFactor);
+      const anchorBalance = segStartBalance.mul(partialFactor);
+      rows.push({
+        date: new Date(anchorDate),
+        indexRate: monthlyRate,
+        dailyFactor: partialFactor.toNumber(),
+        accumulatedFactor: anchorAccFactor.toNumber(),
+        balance: anchorBalance.toNumber(),
+        isProjected,
+        description: `Pro-rata: ${elapsedDays}/${seg.totalDaysInMonth} dias`,
+      });
+    }
+
     accumulatedFactor = accumulatedFactor.mul(monthFactor);
     currentBalance = currentBalance.mul(monthFactor);
 
     rows.push({
-      date: new Date(seg.startOfSegment),
+      date: new Date(seg.endOfSegment),
       indexRate: monthlyRate,
       dailyFactor: monthFactor.toNumber(),
       accumulatedFactor: accumulatedFactor.toNumber(),

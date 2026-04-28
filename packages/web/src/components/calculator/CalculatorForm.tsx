@@ -24,10 +24,38 @@ import {
   ThesisType, GracePeriodType, AmortizationSystem,
 } from '@/lib/api';
 import { INDEX_LABELS, BASIS_LABELS } from '@/lib/utils';
+import { toAnnual, RateMode } from '@/lib/rateConversion';
 import axios from 'axios';
 
 interface CalculatorFormProps {
   onResult: (result: CalculationResult) => void;
+}
+
+function RateModeToggle({
+  value,
+  onChange,
+}: {
+  value: RateMode;
+  onChange: (v: RateMode) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-md border border-white/10 overflow-hidden shrink-0">
+      {(['aa', 'am'] as const).map(m => (
+        <button
+          key={m}
+          type="button"
+          onClick={() => onChange(m)}
+          className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${
+            value === m
+              ? 'bg-primary text-primary-foreground shadow-[0_0_8px_rgba(16,185,129,0.25)]'
+              : 'text-muted-foreground hover:bg-white/5'
+          }`}
+        >
+          {m === 'aa' ? 'a.a.' : 'a.m.'}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 /* ── Thesis groups ── */
@@ -120,6 +148,7 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
   const [spreadMode, setSpreadMode] = useState<'none' | 'percentage' | 'additive'>('none');
   const [spreadValue, setSpreadValue] = useState<number>(0);
   const [prefixedRate, setPrefixedRate] = useState<number>(0);
+  const [prefixedRateMode, setPrefixedRateMode] = useState<RateMode>('aa');
   const [amortizations, setAmortizations] = useState<AmortizationEntry[]>([]);
   const [showAmortModal, setShowAmortModal] = useState(false);
   const [premises, setPremises] = useState<FuturePremise[]>([]);
@@ -132,6 +161,7 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
   const [dcfFlows, setDcfFlows] = useState<DCFCashFlow[]>([]);
   const [showDcfModal, setShowDcfModal] = useState(false);
   const [discountRate, setDiscountRate] = useState<number>(0);
+  const [discountRateMode, setDiscountRateMode] = useState<RateMode>('aa');
   const [referenceDate, setReferenceDate] = useState('');
 
   // T3 – Grace period
@@ -140,11 +170,13 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
 
   // T5 – Correção com Juros
   const [interestRate, setInterestRate] = useState<number>(0);
+  const [interestRateMode, setInterestRateMode] = useState<RateMode>('aa');
   const [interestType, setInterestType] = useState<'SIMPLES' | 'COMPOSTA'>('COMPOSTA');
 
   // T4 – Full flow
   const [amortizationSystem, setAmortizationSystem] = useState<AmortizationSystem>('SAC');
   const [remunerationRate, setRemunerationRate] = useState<number>(0);
+  const [remunerationRateMode, setRemunerationRateMode] = useState<RateMode>('aa');
   const [numberOfPeriods, setNumberOfPeriods] = useState<number>(12);
   const [hasGracePeriod, setHasGracePeriod] = useState(false);
   const [ffGracePeriodType, setFfGracePeriodType] = useState<GracePeriodType>('A');
@@ -177,17 +209,21 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
     setSpreadMode('none');
     setSpreadValue(0);
     setPrefixedRate(0);
+    setPrefixedRateMode('aa');
     setAmortizations([]);
     setPremises([]);
     setDcfFlows([]);
     setDiscountRate(0);
+    setDiscountRateMode('aa');
     setReferenceDate('');
     setGracePeriodType('A');
     setGracePeriodEndDate('');
     setInterestRate(0);
+    setInterestRateMode('aa');
     setInterestType('COMPOSTA');
     setAmortizationSystem('SAC');
     setRemunerationRate(0);
+    setRemunerationRateMode('aa');
     setNumberOfPeriods(12);
     setHasGracePeriod(false);
     setFfGracePeriodType('A');
@@ -223,7 +259,7 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
           amount: f.amount,
           label: f.label,
         })),
-        discountRate,
+        discountRate: toAnnual(discountRate, discountRateMode),
         referenceDate: referenceDate
           ? new Date(referenceDate + 'T12:00:00').toISOString()
           : base.startDate,
@@ -237,7 +273,7 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
         ...base,
         initialAmount: amount,
         amortizationSystem,
-        remunerationRate,
+        remunerationRate: toAnnual(remunerationRate, remunerationRateMode),
         numberOfPeriods,
         gracePeriod: hasGracePeriod && graceEnd
           ? { type: ffGracePeriodType, endDate: new Date(graceEnd + 'T12:00:00').toISOString() }
@@ -249,7 +285,7 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
     const req: CalculationRequest = {
       ...base,
       initialAmount: amount,
-      prefixedRate: indexType === 'PREFIXADA' ? prefixedRate : undefined,
+      prefixedRate: indexType === 'PREFIXADA' ? toAnnual(prefixedRate, prefixedRateMode) : undefined,
       spread: spreadMode !== 'none' ? { mode: spreadMode, value: spreadValue } : undefined,
       amortizations: amortizations.map(a => ({
         date: new Date(a.date + 'T12:00:00').toISOString(),
@@ -276,7 +312,7 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
     }
 
     if (thesis === 'CORRECAO_COM_JUROS') {
-      req.interestRate = interestRate;
+      req.interestRate = toAnnual(interestRate, interestRateMode);
       req.interestType = interestType;
     }
 
@@ -446,14 +482,17 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
                       <p className="text-xs text-muted-foreground">Data base para o desconto (geralmente hoje).</p>
                     </div>
                     <div className="space-y-1.5">
-                      <Label>Taxa de Desconto (% a.a.)</Label>
-                      <Input
-                        type="number" step={0.01} min={0}
-                        value={discountRate || ''}
-                        onChange={e => setDiscountRate(parseFloat(e.target.value) || 0)}
-                        placeholder="ex: 12.5"
-                        className="font-mono"
-                      />
+                      <Label>Taxa de Desconto ({discountRateMode === 'aa' ? '% a.a.' : '% a.m.'})</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          type="number" step={0.01} min={0}
+                          value={discountRate || ''}
+                          onChange={e => setDiscountRate(parseFloat(e.target.value) || 0)}
+                          placeholder={discountRateMode === 'aa' ? 'ex: 12.5' : 'ex: 0.95'}
+                          className="font-mono flex-1"
+                        />
+                        <RateModeToggle value={discountRateMode} onChange={setDiscountRateMode} />
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <Label className="flex items-center gap-1">
@@ -514,13 +553,17 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
                       <DateInputBR value={startDate} onChange={setStartDate} />
                     </div>
                     <div className="space-y-1.5">
-                      <Label>Taxa de Remuneração (% a.a.)</Label>
-                      <Input
-                        type="number" step={0.01} min={0}
-                        value={remunerationRate || ''}
-                        onChange={e => setRemunerationRate(parseFloat(e.target.value) || 0)}
-                        placeholder="ex: 12.5" className="font-mono"
-                      />
+                      <Label>Taxa de Remuneração ({remunerationRateMode === 'aa' ? '% a.a.' : '% a.m.'})</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          type="number" step={0.01} min={0}
+                          value={remunerationRate || ''}
+                          onChange={e => setRemunerationRate(parseFloat(e.target.value) || 0)}
+                          placeholder={remunerationRateMode === 'aa' ? 'ex: 12.5' : 'ex: 0.95'}
+                          className="font-mono flex-1"
+                        />
+                        <RateModeToggle value={remunerationRateMode} onChange={setRemunerationRateMode} />
+                      </div>
                     </div>
                     <div className="space-y-1.5">
                       <Label>Prazo (meses)</Label>
@@ -669,13 +712,17 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
                     {/* Taxa Pré-fixada */}
                     {indexType === 'PREFIXADA' && (
                       <div className="space-y-1.5">
-                        <Label>Taxa Pré-fixada (% a.a.)</Label>
-                        <Input
-                          type="number" step={0.01} min={0}
-                          value={prefixedRate || ''}
-                          onChange={e => setPrefixedRate(parseFloat(e.target.value) || 0)}
-                          placeholder="ex: 12.5" className="font-mono"
-                        />
+                        <Label>Taxa Pré-fixada ({prefixedRateMode === 'aa' ? '% a.a.' : '% a.m.'})</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            type="number" step={0.01} min={0}
+                            value={prefixedRate || ''}
+                            onChange={e => setPrefixedRate(parseFloat(e.target.value) || 0)}
+                            placeholder={prefixedRateMode === 'aa' ? 'ex: 12.5' : 'ex: 0.95'}
+                            className="font-mono flex-1"
+                          />
+                          <RateModeToggle value={prefixedRateMode} onChange={setPrefixedRateMode} />
+                        </div>
                       </div>
                     )}
                   </>
@@ -801,13 +848,17 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
                 </div>
                 <AccordionContent id="juros" className="px-3 pb-3 space-y-3">
                   <div className="space-y-1.5">
-                    <Label className="text-sm">Taxa de Juros (% a.a.)</Label>
-                    <Input
-                      type="number" step="0.01" min="0"
-                      placeholder="ex: 6"
-                      value={interestRate || ''}
-                      onChange={e => setInterestRate(parseFloat(e.target.value) || 0)}
-                    />
+                    <Label className="text-sm">Taxa de Juros ({interestRateMode === 'aa' ? '% a.a.' : '% a.m.'})</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="number" step="0.01" min="0"
+                        placeholder={interestRateMode === 'aa' ? 'ex: 6' : 'ex: 0.5'}
+                        value={interestRate || ''}
+                        onChange={e => setInterestRate(parseFloat(e.target.value) || 0)}
+                        className="flex-1"
+                      />
+                      <RateModeToggle value={interestRateMode} onChange={setInterestRateMode} />
+                    </div>
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-sm">Tipo de Capitalização</Label>
