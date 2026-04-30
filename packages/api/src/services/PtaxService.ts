@@ -56,19 +56,26 @@ export class PtaxService {
     }
   }
 
-  /** Consulta Dólar num período */
+  /**
+   * Consulta Dólar num período.
+   *
+   * O endpoint `CotacaoDolarPeriodo` da Olinda retorna SOMENTE a cotação
+   * de fechamento e NÃO inclui o campo `tipoBoletim`. Por isso, marcamos
+   * cada quote como "Fechamento" — caso contrário o filtro de boletim
+   * em `getSummaryPeriod` descartaria todas as cotações de USD.
+   */
   static async getDolarPeriod(startDate: Date, endDate: Date): Promise<PtaxQuote[]> {
     try {
       const startStr = formatOlindaDate(startDate);
       const endStr = formatOlindaDate(endDate);
       const url = `${OLINDA_BASE_URL}/CotacaoDolarPeriodo(dataInicial=@dataInicial,dataFinalCotacao=@dataFinalCotacao)?@dataInicial='${startStr}'&@dataFinalCotacao='${endStr}'&$format=json`;
-      
+
       const { data } = await axios.get(url, { timeout: 15000 });
       return (data.value || []).map((item: any) => ({
         date: new Date(item.dataHoraCotacao),
         buyRate: parseFloat(item.cotacaoCompra),
         sellRate: parseFloat(item.cotacaoVenda),
-        bulletinType: item.tipoBoletim || 'Desconhecido',
+        bulletinType: item.tipoBoletim || 'Fechamento',
         timestamp: item.dataHoraCotacao
       }));
     } catch (error: any) {
@@ -79,10 +86,13 @@ export class PtaxService {
 
   /** Consulta qualquer moeda num período */
   static async getCurrencyPeriod(currency: string, startDate: Date, endDate: Date): Promise<PtaxQuote[]> {
+    // Para USD, se o usuário pediu boletins não-Fechamento (Abertura/Intermediário/Todos),
+    // o endpoint CotacaoDolarPeriodo não basta — ele só traz Fechamento. Caímos para
+    // CotacaoMoedaPeriodo, que aceita USD e devolve todos os boletins.
     if (currency.toUpperCase() === 'USD') {
       return this.getDolarPeriod(startDate, endDate);
     }
-    
+
     try {
       const startStr = formatOlindaDate(startDate);
       const endStr = formatOlindaDate(endDate);
