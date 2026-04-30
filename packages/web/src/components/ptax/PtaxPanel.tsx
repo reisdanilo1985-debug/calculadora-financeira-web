@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Download, Landmark, AlertCircle, HelpCircle, X } from 'lucide-react';
+import { Download, Landmark, AlertCircle, HelpCircle, X, FileSpreadsheet, BookOpen } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -127,6 +127,7 @@ export function PtaxPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [summary, setSummary] = useState<PtaxSummaryData | null>(null);
+  const [conversionAmount, setConversionAmount] = useState<string>('');
 
   const handleFetch = async () => {
     if (startDate >= endDate) {
@@ -144,6 +145,47 @@ export function PtaxPanel() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDownloadAccountingCSV = () => {
+    if (!summary) return;
+    const fmt = (n: number) => n.toFixed(4).replace('.', ',');
+    const dateBR = (iso: string) => new Date(iso).toISOString().slice(0, 10).split('-').reverse().join('/');
+    const periodLabel = `${dateBR(summary.periodStart)} a ${dateBR(summary.periodEnd)}`;
+    const rows = [
+      ['Conversão de Demonstrações Contábeis - PTAX BCB'],
+      [`Moeda: ${summary.currency}/BRL`],
+      [`Período: ${periodLabel}`],
+      [`Boletim: ${summary.bulletinType}`],
+      [],
+      ['Aplicação', 'Tipo de Cotação', 'Data', 'Compra (R$)', 'Venda (R$)'],
+      [
+        'Contas de Resultado (DRE)',
+        'Cotação Média do Período',
+        periodLabel,
+        fmt(summary.averageBuyRate),
+        fmt(summary.averageSellRate),
+      ],
+      [
+        'Contas Patrimoniais (BP)',
+        'PTAX de Fechamento do Período',
+        dateBR(summary.lastQuoteDate),
+        fmt(summary.lastQuoteBuy),
+        fmt(summary.lastQuoteSell),
+      ],
+    ];
+    const csvContent = rows.map(r => r.join(';')).join('\n');
+    const blob = new Blob(['﻿' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute(
+      'download',
+      `conversao_contabil_${summary.currency}_${summary.periodStart.slice(0, 10)}_a_${summary.periodEnd.slice(0, 10)}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleDownloadCSV = () => {
@@ -291,6 +333,112 @@ export function PtaxPanel() {
                 Baixar Histórico Completo
               </Button>
             </div>
+
+            {/* ── Conversão de Demonstrações Contábeis ── */}
+            <Card className="glass-card ring-1 ring-primary/30 bg-gradient-to-br from-primary/[0.06] to-transparent">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <CardTitle className="text-base font-semibold flex items-center gap-2">
+                      <BookOpen className="h-4 w-4 text-primary" />
+                      Conversão de Demonstrações Contábeis
+                    </CardTitle>
+                    <p className="text-xs text-muted-foreground">
+                      Cotações prontas para conversão de DFs em moeda estrangeira (CPC 02 / IAS 21).
+                      Use a <strong className="text-foreground/80">média do período</strong> para contas de resultado (DRE)
+                      e a <strong className="text-foreground/80">PTAX de fechamento</strong> para contas patrimoniais (BP).
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={handleDownloadAccountingCSV} className="gap-2 shrink-0">
+                    <FileSpreadsheet className="h-4 w-4" />
+                    Exportar CSV
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-blue-500/20 bg-blue-500/[0.04] p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold uppercase tracking-widest text-blue-400/80">DRE · Resultado</span>
+                      <span className="text-[10px] text-muted-foreground">Cotação Média</span>
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className="flex justify-between items-baseline">
+                        <span className="text-xs text-muted-foreground">Compra:</span>
+                        <span className="font-mono text-sm">R$ {summary.averageBuyRate.toFixed(4)}</span>
+                      </div>
+                      <div className="flex justify-between items-baseline">
+                        <span className="text-xs text-muted-foreground">Venda:</span>
+                        <span className="font-mono text-xl font-semibold text-blue-400">R$ {summary.averageSellRate.toFixed(4)}</span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground/70 pt-1 border-t border-blue-500/10">
+                      Média aritmética de {summary.businessDays} dia(s) com cotação no período.
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold uppercase tracking-widest text-emerald-400/80">BP · Patrimonial</span>
+                      <span className="text-[10px] text-muted-foreground">PTAX Fechamento</span>
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className="flex justify-between items-baseline">
+                        <span className="text-xs text-muted-foreground">Compra:</span>
+                        <span className="font-mono text-sm">R$ {summary.lastQuoteBuy.toFixed(4)}</span>
+                      </div>
+                      <div className="flex justify-between items-baseline">
+                        <span className="text-xs text-muted-foreground">Venda:</span>
+                        <span className="font-mono text-xl font-semibold text-emerald-400">R$ {summary.lastQuoteSell.toFixed(4)}</span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground/70 pt-1 border-t border-emerald-500/10">
+                      Última cotação disponível: {new Date(summary.lastQuoteDate).toISOString().slice(0, 10).split('-').reverse().join('/')}.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Conversor rápido */}
+                <div className="rounded-lg border border-white/8 bg-white/[0.02] p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <Label className="text-xs">Simulador de Conversão</Label>
+                    <span className="text-[10px] text-muted-foreground">Informe um valor em {summary.currency} para ver a equivalência em R$</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground font-medium shrink-0">{summary.currency}</span>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={conversionAmount}
+                      onChange={e => setConversionAmount(e.target.value)}
+                      placeholder="ex: 100000"
+                      className="font-mono"
+                    />
+                  </div>
+                  {(() => {
+                    const amount = parseFloat(conversionAmount);
+                    if (!conversionAmount || isNaN(amount) || amount <= 0) return null;
+                    const fmtBRL = (n: number) =>
+                      n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    const dre = amount * summary.averageSellRate;
+                    const bp = amount * summary.lastQuoteSell;
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
+                        <div className="rounded-md bg-blue-500/[0.06] border border-blue-500/10 px-3 py-2">
+                          <p className="text-[10px] uppercase tracking-wider text-blue-400/70">DRE (Média Venda)</p>
+                          <p className="font-mono text-sm font-semibold text-blue-300">R$ {fmtBRL(dre)}</p>
+                        </div>
+                        <div className="rounded-md bg-emerald-500/[0.06] border border-emerald-500/10 px-3 py-2">
+                          <p className="text-[10px] uppercase tracking-wider text-emerald-400/70">BP (PTAX Fechamento Venda)</p>
+                          <p className="font-mono text-sm font-semibold text-emerald-300">R$ {fmtBRL(bp)}</p>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </CardContent>
+            </Card>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <Card className="glass-card ring-1 ring-primary/20">
