@@ -9,6 +9,7 @@ import { exchangeRouter } from './routes/exchange';
 import { marketRouter } from './routes/market';
 import { waccRouter } from './routes/wacc';
 import { retirementRouter } from './routes/retirement';
+import { tesourariaRouter } from './routes/tesouraria';
 import { startCronJobs } from './jobs/cronTasks';
 import logger from './middleware/logger';
 
@@ -53,6 +54,7 @@ app.use('/api/exchange', exchangeRouter);
 app.use('/api/market', marketRouter);
 app.use('/api/wacc', waccRouter);
 app.use('/api/retirement', retirementRouter);
+app.use('/api/tesouraria', tesourariaRouter);
 
 // Health check
 app.get('/health', (_req, res) => {

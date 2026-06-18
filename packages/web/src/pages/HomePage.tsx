@@ -13,6 +13,7 @@ import { ExchangePanel } from '@/components/exchange/ExchangePanel';
 import { PtaxPanel } from '@/components/ptax/PtaxPanel';
 import { WaccPanel } from '@/components/wacc/WaccPanel';
 import { RetirementPanel } from '@/components/retirement/RetirementPanel';
+import { TesourariaPanel } from '@/components/tesouraria/TesourariaPanel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CalculationResult, CompareResult } from '@/lib/api';
@@ -145,6 +146,12 @@ export function HomePage() {
               className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'ptax' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
             >
               PTAX BCB
+            </button>
+            <button
+              onClick={() => setActiveTab('tesouraria')}
+              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'tesouraria' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Tesouraria
             </button>
             <button
               onClick={() => setActiveTab('wacc')}
@@ -296,6 +303,11 @@ export function HomePage() {
             {/* Tab: PTAX Oficial */}
             <TabsContent value="ptax" className="flex-1 m-0 data-[state=active]:flex flex-col">
               <PtaxPanel />
+            </TabsContent>
+
+            {/* Tab: Tesouraria */}
+            <TabsContent value="tesouraria" className="flex-1 m-0 data-[state=active]:flex flex-col">
+              <TesourariaPanel />
             </TabsContent>
 
             {/* Tab: WACC */}

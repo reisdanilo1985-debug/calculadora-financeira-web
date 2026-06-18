@@ -539,4 +539,57 @@ export async function getRetirementPerfis(): Promise<{ id: string; retornoRealAn
   return data;
 }
 
+// ─────────────────────────────── Tesouraria ──────────────────────────────────
+
+export interface VerticeCurva {
+  prazo: number;
+  taxa: number;
+}
+
+export interface Proveniencia {
+  fonte: string;
+  ts: string;
+  flagDesatualizado: boolean;
+}
+
+export interface PremissasSnapshot {
+  dataRef: string;
+  escalares: {
+    cdiAa: number;
+    selicMeta: number;
+    ipcaFocus12m: number;
+    usdbrl: number;
+    eurusd: number;
+    sofrAa: number;
+    cupomUsdAa?: number;
+    cupomEurAa?: number;
+  };
+  curvas: {
+    diPre?: VerticeCurva[];
+    cupomUsd?: VerticeCurva[];
+    cupomEur?: VerticeCurva[];
+    ust?: VerticeCurva[];
+    real?: VerticeCurva[];
+  };
+  proveniencia: Record<string, Proveniencia>;
+}
+
+/** Busca o snapshot de premissas de mercado (com cache/LKG no servidor). */
+export async function getPremissasTesouraria(): Promise<PremissasSnapshot> {
+  const { data } = await api.get<PremissasSnapshot>('/tesouraria/premissas');
+  return data;
+}
+
+/** Força a reconstrução do snapshot de premissas. */
+export async function refreshPremissasTesouraria(): Promise<PremissasSnapshot> {
+  const { data } = await api.post<PremissasSnapshot>('/tesouraria/premissas/refresh', {});
+  return data;
+}
+
+/** Executa um dos 13 calculadores de Tesouraria. Retorna o objeto estruturado do core. */
+export async function runTesourariaCalc<T = any>(nome: string, body: Record<string, any>): Promise<T> {
+  const { data } = await api.post<T>(`/tesouraria/calc/${nome}`, body);
+  return data;
+}
+
 export default api;

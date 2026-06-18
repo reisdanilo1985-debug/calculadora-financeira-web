@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { forceRefreshIndex, BCB_SUPPORTED_INDEXES } from '../services/BCBService';
 import { forceRefreshSOFR } from '../services/FREDService';
+import { getPremissasSnapshot } from '../services/marketdata/snapshot';
 import logger from '../middleware/logger';
 
 export function startCronJobs() {
@@ -36,6 +37,14 @@ export function startCronJobs() {
           }
         }
         
+        // 3. Reconstruir o snapshot de premissas de Tesouraria (pós-atualização das fontes)
+        try {
+          const snap = await getPremissasSnapshot(true);
+          logger.info(`[CRON] Snapshot de premissas reconstruído (data_ref ${snap.dataRef}).`);
+        } catch (err: any) {
+          logger.error(`[CRON] Falha ao reconstruir snapshot de premissas: ${err.message}`);
+        }
+
         logger.info(`[CRON] Rotina de 18:30 finalizada com sucesso! Novos registros hoje: ${totalInserted}`);
       } catch (error: any) {
         logger.error(`[CRON] Erro crítico inesperado na rotina de atualização: ${error.message}`);
