@@ -14,3 +14,5 @@ export * from './calculators/puTitulos';
 export * from './calculators/swap';
 export * from './calculators/forwardNdf';
 export * from './calculators/usMoneyMarket';
+export * from './curves/tesouroCurve';
+export * from './curves/anbimaEttj';

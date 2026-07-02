@@ -102,8 +102,8 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-              Patrimônio Tributável
-              <span title="CDB, Tesouro Direto, ações, FIIs, LCI/LCA"><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
+              Patrimônio Investido
+              <span title="Total investido hoje: CDB, Tesouro Direto, ações, FIIs, fundos, LCI/LCA etc."><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
             </Label>
             <Input type="number" value={form.patrimonioTributavel || ''}
               onChange={e => set({ patrimonioTributavel: +e.target.value || 0 })}
@@ -111,26 +111,8 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-              Saldo PGBL
-              <span title="Plano Gerador de Benefício Livre — IR na saída sobre valor total"><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
-            </Label>
-            <Input type="number" value={form.saldoPGBL || ''}
-              onChange={e => set({ saldoPGBL: +e.target.value || 0 })}
-              placeholder="R$ 0,00" />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-              Saldo VGBL
-              <span title="Vida Gerador de Benefício Livre — IR só sobre o rendimento"><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
-            </Label>
-            <Input type="number" value={form.saldoVGBL || ''}
-              onChange={e => set({ saldoVGBL: +e.target.value || 0 })}
-              placeholder="R$ 0,00" />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
               Renda de Aluguel (R$/mês)
-              <span title="Renda de imóveis. Isenta de PGBL/VGBL, tributada como pessoa física"><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
+              <span title="Renda mensal de imóveis — entra corrigida pela inflação até e durante a aposentadoria."><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
             </Label>
             <Input type="number" value={form.rendaAluguel || ''}
               onChange={e => set({ rendaAluguel: +e.target.value || 0 })}
@@ -147,28 +129,18 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
           <TrendingUp className="h-4 w-4" />
           <h3 className="text-sm font-semibold uppercase tracking-wider">Aportes Mensais (R$)</h3>
         </div>
-        <div className="grid grid-cols-3 gap-4">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Geral (Tributável)</Label>
-            <Input type="number" value={form.aporteMensal || ''}
-              onChange={e => set({ aporteMensal: +e.target.value || 0 })}
-              placeholder="ex: 2.000" />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-              PGBL
-              <span title="Máx. 12% da renda bruta anual. Dedutível no IR."><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
-            </Label>
-            <Input type="number" value={form.aportePGBL || ''}
-              onChange={e => set({ aportePGBL: +e.target.value || 0 })}
-              placeholder="ex: 800" />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">VGBL</Label>
-            <Input type="number" value={form.aporteVGBL || ''}
-              onChange={e => set({ aporteVGBL: +e.target.value || 0 })}
-              placeholder="ex: 500" />
-          </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+            Aporte Mensal
+            <span title="Quanto você investe por mês, somando todos os destinos. É o principal motor do resultado."><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
+          </Label>
+          <Input type="number" value={form.aporteMensal || ''}
+            onChange={e => set({ aporteMensal: +e.target.value || 0 })}
+            placeholder="ex: 2.000" />
+          <p className="text-[10px] text-muted-foreground/60">
+            Dica: aporte constante e tempo pesam mais que a rentabilidade — cada ano a mais de aporte encurta anos de
+            trabalho lá na frente.
+          </p>
         </div>
       </div>
 
@@ -287,17 +259,6 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
                 className="pr-12" />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">% a.a.</span>
             </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Tabela PGBL/VGBL</Label>
-            <select
-              className="w-full h-9 rounded-md border border-input bg-background/50 px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              value={form.tabelaPGBL}
-              onChange={e => set({ tabelaPGBL: e.target.value as any })}
-            >
-              <option value="regressiva">Regressiva (10% a 35% conforme prazo)</option>
-              <option value="progressiva">Progressiva (tabela normal IR)</option>
-            </select>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground flex items-center gap-1.5">

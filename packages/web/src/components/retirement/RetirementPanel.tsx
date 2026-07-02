@@ -31,7 +31,7 @@ export function RetirementPanel() {
       <aside className="border-r border-white/5 overflow-y-auto bg-card/20 backdrop-blur-sm relative glass-panel mb-0 rounded-none border-y-0 border-l-0">
         <div className="p-5">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-bold tracking-tight">Retirement Architect</h2>
+            <h2 className="text-lg font-bold tracking-tight">Planejamento de Aposentadoria</h2>
             <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
           </div>
           <RetirementForm onCalculate={handleCalculate} loading={loading} />
@@ -77,17 +77,16 @@ export function RetirementPanel() {
               <BrainCircuit className="h-12 w-12 text-primary/60" />
             </div>
             <div>
-              <p className="text-base font-medium text-foreground/80 tracking-tight">Retirement Architect</p>
+              <p className="text-base font-medium text-foreground/80 tracking-tight">Planejamento de Aposentadoria</p>
               <p className="text-sm text-muted-foreground mt-2 max-w-sm mx-auto leading-relaxed">
-                Simule seu plano de aposentadoria com Monte Carlo, INSS (EC 103/2019),
-                PGBL/VGBL e inflação médica. Preencha os dados e clique em{' '}
+                Informe quanto você já tem, quanto aporta por mês e quanto quer gastar — o simulador projeta milhares de
+                cenários de mercado (Monte Carlo) e diz a chance do seu plano dar certo. Clique em{' '}
                 <span className="text-primary font-medium">Simular Aposentadoria</span>.
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-3 mt-4 opacity-60">
               <span className="text-[10px] bg-white/5 px-2 py-1 rounded border border-white/5 uppercase tracking-tighter">Monte Carlo</span>
-              <span className="text-[10px] bg-white/5 px-2 py-1 rounded border border-white/5 uppercase tracking-tighter">EC 103/2019</span>
-              <span className="text-[10px] bg-white/5 px-2 py-1 rounded border border-white/5 uppercase tracking-tighter">PGBL/VGBL</span>
+              <span className="text-[10px] bg-white/5 px-2 py-1 rounded border border-white/5 uppercase tracking-tighter">INSS (EC 103/2019)</span>
               <span className="text-[10px] bg-white/5 px-2 py-1 rounded border border-white/5 uppercase tracking-tighter">Inflação Médica</span>
               <span className="text-[10px] bg-white/5 px-2 py-1 rounded border border-white/5 uppercase tracking-tighter">Perfis de Risco</span>
             </div>

@@ -7,7 +7,7 @@
  * buildBody. O core/API trabalha sempre em fração decimal.
  */
 
-import { PremissasSnapshot } from '@/lib/api';
+import { PremissasSnapshot, VerticeCurva } from '@/lib/api';
 
 export type FieldKind =
   | 'percent'
@@ -49,6 +49,34 @@ const num = (x: any): number | undefined =>
   x === '' || x === undefined || x === null ? undefined : Number(x);
 const int = (x: any): number | undefined =>
   x === '' || x === undefined || x === null ? undefined : Math.round(Number(x));
+
+// ── Ponte de interpolação: curva do snapshot → taxa no prazo (método linear,
+// extrapolação flat — espelha `interpolaTaxa` do core). Prazo na unidade da
+// curva (du para diPre/real; dc para cupomUsd/cupomEur/ust).
+function interpLinear(prazo: number, vs: VerticeCurva[]): number | undefined {
+  if (!vs || !vs.length || !isFinite(prazo)) return undefined;
+  const p = [...vs].sort((a, b) => a.prazo - b.prazo);
+  if (prazo <= p[0].prazo) return p[0].taxa;
+  if (prazo >= p[p.length - 1].prazo) return p[p.length - 1].taxa;
+  let i = 0;
+  while (i < p.length - 1 && !(prazo >= p[i].prazo && prazo <= p[i + 1].prazo)) i++;
+  const { prazo: x0, taxa: y0 } = p[i];
+  const { prazo: x1, taxa: y1 } = p[i + 1];
+  return y0 + (y1 - y0) * ((prazo - x0) / (x1 - x0));
+}
+
+/**
+ * Constrói um `premise` que auto-preenche um campo `percent` interpolando uma
+ * curva do snapshot no prazo dado. Retorna o valor em % (o buildBody reconverte).
+ */
+type CurvaKey = keyof PremissasSnapshot['curvas'];
+const premiseFromCurve =
+  (curva: CurvaKey | ((v: Record<string, any>) => CurvaKey), prazo: (v: Record<string, any>) => number) =>
+  (s: PremissasSnapshot, v: Record<string, any>): number | undefined => {
+    const key = typeof curva === 'function' ? curva(v) : curva;
+    const taxa = interpLinear(prazo(v), (s.curvas?.[key] as VerticeCurva[]) || []);
+    return taxa == null ? undefined : taxa * 100;
+  };
 
 export const GRUPOS = [
   'Conversões',
@@ -134,10 +162,11 @@ export const CALCULADORES: CalcDef[] = [
       },
       { key: 'spreadEstrangeiroAa', label: 'Spread externo a.a. (%)', kind: 'percent', default: 8 },
       { key: 'cdiAa', label: 'CDI a.a. (%)', kind: 'percent', default: 14.4, premise: s => s.escalares.cdiAa * 100 },
+      { key: 'prazoDc', label: 'Prazo (dias corridos)', kind: 'int', default: 720, help: 'Vértice da vida média do papel (para interpolar o cupom cambial).' },
       {
         key: 'cupomEstrangeiroAa', label: 'Cupom cambial a.a. (%)', kind: 'percent', default: 5.481,
-        premise: (s, v) => (v.moeda === 'EUR' ? s.escalares.cupomEurAa : s.escalares.cupomUsdAa)! * 100,
-        help: 'Cupom no vértice da vida média do papel.',
+        premise: premiseFromCurve(v => (v.moeda === 'EUR' ? 'cupomEur' : 'cupomUsd'), v => Number(v.prazoDc)),
+        help: 'Interpolado da curva de cupom cambial no prazo (seed na Fase B).',
       },
     ],
     buildBody: v => ({
@@ -152,7 +181,8 @@ export const CALCULADORES: CalcDef[] = [
     grupo: 'Cross-currency & CDI',
     descricao: 'Fisher: taxa real + IPCA → nominal, % do CDI e breakeven de inflação.',
     fields: [
-      { key: 'realAa', label: 'Taxa real a.a. (%)', kind: 'percent', default: 7 },
+      { key: 'prazoDu', label: 'Prazo (dias úteis)', kind: 'int', default: 252, help: 'Vértice para interpolar a curva real (NTN-B).' },
+      { key: 'realAa', label: 'Taxa real a.a. (%)', kind: 'percent', default: 7, premise: premiseFromCurve('real', v => Number(v.prazoDu)) },
       { key: 'ipcaAa', label: 'IPCA proj. a.a. (%)', kind: 'percent', default: 4.5, premise: s => s.escalares.ipcaFocus12m * 100 },
       { key: 'cdiAa', label: 'CDI a.a. (%)', kind: 'percent', default: 14.4, premise: s => s.escalares.cdiAa * 100 },
       { key: 'preMercadoAa', label: 'Pré de mercado a.a. (%)', kind: 'percent', optional: true, help: 'Para breakeven e veredito.' },
@@ -241,9 +271,13 @@ export const CALCULADORES: CalcDef[] = [
     fields: [
       { key: 'notional', label: 'Notional', kind: 'money', default: 1000000 },
       { key: 'preContratada', label: 'Pré contratada a.a. (%)', kind: 'percent', default: 14.5 },
-      { key: 'preMercadoAa', label: 'Pré de mercado a.a. (%)', kind: 'percent', default: 13.14 },
       { key: 'duTotal', label: 'du total', kind: 'int', default: 252 },
       { key: 'duDecorridos', label: 'du decorridos', kind: 'int', default: 126 },
+      {
+        key: 'preMercadoAa', label: 'Pré de mercado a.a. (%)', kind: 'percent', default: 13.14,
+        premise: premiseFromCurve('diPre', v => Number(v.duTotal) - Number(v.duDecorridos)),
+        help: 'Interpolado da curva pré no prazo remanescente (du total − decorridos).',
+      },
       { key: 'fatorCdiAcumulado', label: 'Fator CDI acumulado', kind: 'number', default: 1.048 },
     ],
     buildBody: v => ({
@@ -269,10 +303,10 @@ export const CALCULADORES: CalcDef[] = [
         ],
       },
       { key: 'spot', label: 'Spot (R$/US$)', kind: 'number', default: 5.4, premise: s => s.escalares.usdbrl, showIf: v => v.modo !== 'ndf' },
-      { key: 'iBrAa', label: 'DI pré a.a. (%)', kind: 'percent', default: 14.4, showIf: v => v.modo !== 'ndf' },
       { key: 'du', label: 'Dias úteis', kind: 'int', default: 252, showIf: v => v.modo !== 'ndf' },
-      { key: 'cupomUsdAa', label: 'Cupom USD a.a. (%)', kind: 'percent', default: 5.5909, premise: s => (s.escalares.cupomUsdAa ?? 0) * 100, showIf: v => v.modo !== 'ndf' },
+      { key: 'iBrAa', label: 'DI pré a.a. (%)', kind: 'percent', default: 14.4, premise: premiseFromCurve('diPre', v => Number(v.du)), showIf: v => v.modo !== 'ndf' },
       { key: 'dc', label: 'Dias corridos', kind: 'int', default: 360, showIf: v => v.modo !== 'ndf' },
+      { key: 'cupomUsdAa', label: 'Cupom USD a.a. (%)', kind: 'percent', default: 5.5909, premise: premiseFromCurve('cupomUsd', v => Number(v.dc)), showIf: v => v.modo !== 'ndf' },
       { key: 'ptaxVencimento', label: 'PTAX no vencimento', kind: 'number', default: 5.7, showIf: v => v.modo === 'ndf' },
       { key: 'kContratado', label: 'Strike contratado', kind: 'number', default: 5.55, showIf: v => v.modo === 'ndf' },
       { key: 'notionalUsd', label: 'Notional (US$)', kind: 'money', default: 1000000, showIf: v => v.modo === 'ndf' },

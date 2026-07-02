@@ -336,7 +336,7 @@ export function ComparadorForm({ onResult }: ComparadorFormProps) {
                   </div>
                 ) : (
                   <div className="space-y-1">
-                    <Label className="text-[10px]">% do índice</Label>
+                    <Label className="text-[10px]" title="Percentual aplicado sobre o índice ANTES da capitalização diária (ex.: 110 = 110% do CDI). Diferente de somar um spread: 110% do CDI fica mais caro quando o CDI sobe.">% do índice ⓘ</Label>
                     <Input
                       type="number"
                       className="h-8 text-xs"

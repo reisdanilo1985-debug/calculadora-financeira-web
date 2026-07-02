@@ -5,9 +5,17 @@
  * (0.144 = 14,40%). A API/UI converte de/para percentual na fronteira.
  */
 
-/** Um vértice de curva: prazo (meses, du ou anos, conforme a curva) + taxa (fração). */
+/**
+ * Um vértice de curva: prazo + taxa (fração).
+ *
+ * Convenção de unidade do `prazo` (trava de precisão nº 3 — unidade explícita):
+ *   - Curvas BR base 252 (diPre, real): prazo em DIAS ÚTEIS (du).
+ *   - Curvas base 360 (cupomUsd, cupomEur, ust): prazo em DIAS CORRIDOS (dc).
+ * A interpolação (`interpolaTaxa`) é agnóstica à unidade, desde que o prazo
+ * consultado use a MESMA unidade dos vértices.
+ */
 export interface VerticeCurva {
-  /** Prazo do vértice (unidade documentada por curva — meses por padrão). */
+  /** Prazo do vértice (du para curvas BR 252; dc para curvas 360). */
   prazo: number;
   /** Taxa do vértice em fração decimal. */
   taxa: number;

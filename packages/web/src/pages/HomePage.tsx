@@ -163,7 +163,7 @@ export function HomePage() {
               onClick={() => setActiveTab('aposentadoria')}
               className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'aposentadoria' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
             >
-              Arquitetura de Aposentadoria
+              Aposentadoria
             </button>
             <button
               onClick={() => setActiveTab('indices')}

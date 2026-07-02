@@ -9,5 +9,8 @@ export * from './services/AmortizationService';
 export * from './services/CalculationEngine';
 export * from './services/GracePeriodService';
 export * from './services/InterestService';
+export * from './engines/WaccEngine';
+export * from './engines/RetirementEngine';
 export * from './utils/businessDays';
+export * from './treasury';
 //# sourceMappingURL=index.d.ts.map

@@ -45,9 +45,11 @@ tesourariaRouter.get('/premissas', async (_req: Request, res: Response) => {
   }
 });
 
-tesourariaRouter.post('/premissas/refresh', async (_req: Request, res: Response) => {
+tesourariaRouter.post('/premissas/refresh', async (req: Request, res: Response) => {
   try {
-    const snap = await getPremissasSnapshot(true);
+    // ?fonte=tesouro pula a ANBIMA (override técnico p/ diagnóstico/comparação).
+    const fonte = req.query.fonte === 'tesouro' ? 'tesouro' : 'auto';
+    const snap = await getPremissasSnapshot(true, fonte);
     return res.json(snap);
   } catch (error: any) {
     logger.error('[TESOURARIA] Erro ao atualizar premissas:', error.message);

@@ -415,6 +415,10 @@ export function ExchangePanel() {
                   <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                     Evolução Histórica
                   </CardTitle>
+                  <p className="text-[10px] text-muted-foreground/60 font-normal normal-case tracking-normal">
+                    Cotações oficiais PTAX do Banco Central (fechamento, 1×/dia útil). CNY via AwesomeAPI. A PTAX é a
+                    referência de contratos e NDFs — pode diferir do câmbio comercial em tempo real do ticker.
+                  </p>
                 </CardHeader>
                 <CardContent>
                   <div className="h-[400px] w-full">

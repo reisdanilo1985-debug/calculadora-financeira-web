@@ -96,7 +96,7 @@ export function RetirementResult({ result }: RetirementResultProps) {
         <MetricCard
           label="Taxa de Retirada Inicial"
           value={`${result.taxaRetiradaInicial.toFixed(1)}%`}
-          sub="Ref: ≤ 3,5% conservador, ≤ 4% moderado"
+          sub="Quanto do patrimônio você saca por ano. Ref: até ~4% tende a durar 30+ anos"
         />
         <MetricCard
           label="Benefício INSS Estimado"
@@ -127,6 +127,10 @@ export function RetirementResult({ result }: RetirementResultProps) {
             <p className="text-base font-bold text-green-400 tabular-nums">{formatBRL(result.saldoFinalP95)}</p>
           </div>
         </div>
+        <p className="text-[10px] text-muted-foreground/60 text-center">
+          Como ler: em 5% dos cenários simulados o saldo termina abaixo do P5; o P50 é o meio do caminho (mediana); só
+          5% terminam acima do P95. Planeje pelo P5–P50, não pelo otimista.
+        </p>
       </div>
 
       {/* ── Resumo acumulação ── */}

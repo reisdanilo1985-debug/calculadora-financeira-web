@@ -157,6 +157,13 @@ export interface CalculationInput {
     remunerationRate?: number;
     /** Número de períodos mensais para Fluxo Completo (T4) */
     numberOfPeriods?: number;
+    /**
+     * Datas onde o engine deve gerar uma linha-âncora (mesmo que não haja
+     * dado de índice nesse dia). Usado pelo CalculationEngine para garantir
+     * que datas de amortização tenham match exato em applyAmortizations.
+     * Campo interno — não exposto na API.
+     */
+    splitDates?: Date[];
 }
 /** Uma linha da memória de cálculo */
 export interface CalculationMemoryRow {

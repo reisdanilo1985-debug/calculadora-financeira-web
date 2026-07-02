@@ -16,10 +16,10 @@ import {
 } from '@/lib/api';
 import { CALCULADORES, getCalcByNome } from './calcConfig';
 import { TesourariaForm } from './TesourariaForm';
-import { ResultView } from './ResultView';
+import { DecisionView } from './DecisionView';
 
-/** Premissas escalares que vêm de fontes ao vivo (curvas são seed na Fase 1). */
-const LIVE_KEYS = ['cdiAa', 'selicMeta', 'ipcaFocus12m', 'usdbrl', 'eurusd', 'sofrAa'];
+/** Premissas ao vivo (escalares + curvas pré/real do Tesouro). */
+const LIVE_KEYS = ['cdiAa', 'selicMeta', 'ipcaFocus12m', 'usdbrl', 'eurusd', 'sofrAa', 'diPre', 'real'];
 
 function pct(n?: number) {
   return n == null ? '—' : `${(n * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
@@ -29,11 +29,18 @@ export function TesourariaPanel() {
   const [snapshot, setSnapshot] = useState<PremissasSnapshot | null>(null);
   const [snapLoading, setSnapLoading] = useState(true);
   const [selected, setSelected] = useState<string>('conversor');
-  const [result, setResult] = useState<any>(null);
+  /** Resultado + corpo enviado (o veredito precisa dos inputs). */
+  const [result, setResult] = useState<{ body: any; data: any } | null>(null);
   const [calcLoading, setCalcLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const calc = getCalcByNome(selected)!;
+
+  // Limpa o resultado ao trocar de calculador (evita veredito órfão na tela).
+  useEffect(() => {
+    setResult(null);
+    setError(null);
+  }, [selected]);
 
   useEffect(() => {
     let active = true;
@@ -67,9 +74,10 @@ export function TesourariaPanel() {
     setCalcLoading(true);
     setError(null);
     try {
-      setResult(await runTesourariaCalc(selected, body));
+      const data = await runTesourariaCalc(selected, body);
+      setResult({ body, data });
     } catch (err: any) {
-      setError(err.response?.data?.error || err.message || 'Erro no cálculo.');
+      setError(err.response?.data?.error || err.message || 'Erro no cálculo. Revise os parâmetros — taxas em %, prazos em dias.');
       setResult(null);
     } finally {
       setCalcLoading(false);
@@ -175,9 +183,24 @@ export function TesourariaPanel() {
             ) : (
               <p className="text-sm text-muted-foreground">{snapLoading ? 'Carregando premissas…' : 'Premissas indisponíveis (usando seeds).'}</p>
             )}
-            <p className="mt-3 text-[10px] text-muted-foreground/60">
-              Curvas (DI, cupom cambial, UST, real) são seed editável na Fase 1 — ajuste manual no formulário quando aplicável.
-            </p>
+            {snapshot && (
+              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]">
+                {([
+                  ['Curva pré', 'diPre', snapshot.curvas.diPre?.length],
+                  ['Curva real', 'real', snapshot.curvas.real?.length],
+                ] as const).map(([label, key, n]) => {
+                  const prov = snapshot.proveniencia[key];
+                  const live = prov && !prov.flagDesatualizado;
+                  return (
+                    <span key={key} className={`flex items-center gap-1 ${live ? 'text-primary' : 'text-amber-400'}`} title={prov?.fonte}>
+                      {live ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                      {label} {n ? `(${n} vért.)` : ''} · {prov?.fonte ?? 'seed'}
+                    </span>
+                  );
+                })}
+                <span className="text-muted-foreground/60">Cupom cambial / UST: seed manual.</span>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -197,11 +220,18 @@ export function TesourariaPanel() {
             )}
             {result ? (
               <div className="animate-fade-in">
-                <ResultView result={result} />
+                <DecisionView nome={selected} body={result.body} result={result.data} snapshot={snapshot} />
               </div>
             ) : (
-              <div className="py-12 text-center text-sm text-muted-foreground">
-                Preencha os parâmetros e clique em <span className="text-primary font-medium">Calcular</span>.
+              <div className="py-12 text-center space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Preencha os parâmetros e clique em <span className="text-primary font-medium">Calcular</span>.
+                </p>
+                <p className="text-[11px] text-muted-foreground/60 max-w-md mx-auto">
+                  O resultado vem em três camadas: o <span className="text-foreground/80">veredito</span> (a decisão em uma
+                  frase), o <span className="text-foreground/80">conceito</span> (entenda o que está por trás) e o{' '}
+                  <span className="text-foreground/80">modo mesa</span> (números, fórmula e premissas para auditoria).
+                </p>
               </div>
             )}
           </CardContent>
