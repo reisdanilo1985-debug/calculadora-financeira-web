@@ -1,0 +1,20 @@
+{
+  "name": "Correção Financeira",
+  "short_name": "Correção Fin.",
+  "description": "Calculadora e plataforma de análise financeira — correção monetária, tesouraria, câmbio, WACC e aposentadoria.",
+  "start_url": "/app/",
+  "scope": "/app/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0b1326",
+  "theme_color": "#0b1326",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

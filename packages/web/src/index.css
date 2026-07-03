@@ -38,9 +38,31 @@
   * {
     @apply border-border;
   }
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
   body {
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', system-ui, sans-serif;
+    /* Comportamento de app: sem scroll horizontal acidental nem bounce vertical */
+    overflow-x: hidden;
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ── Mobile: inputs sem zoom no iOS (≥16px) e alvo de toque confortável ── */
+  @media (max-width: 767px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
+    input:not([type='checkbox']):not([type='radio']):not(.h-8),
+    select:not(.h-8),
+    textarea {
+      min-height: 44px;
+    }
   }
   h1, h2, h3, .font-display {
     font-family: 'Manrope', 'Inter', system-ui, sans-serif;

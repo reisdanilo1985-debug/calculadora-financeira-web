@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BarChart3, Settings, TrendingUp, ShieldCheck, Database, Globe, HelpCircle, X, BarChart2, GitCompare } from 'lucide-react';
+import { BarChart3, Settings, TrendingUp, ShieldCheck, Database, Globe, HelpCircle, X, BarChart2, GitCompare, Menu, Landmark, PiggyBank, Percent, Calculator } from 'lucide-react';
 import { CalculatorForm } from '@/components/calculator/CalculatorForm';
 import { ResultsSummary } from '@/components/results/ResultsSummary';
 import { EvolutionChart } from '@/components/results/EvolutionChart';
@@ -18,6 +18,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CalculationResult, CompareResult } from '@/lib/api';
 import { LiveTickerBar } from '@/components/dashboard/LiveTickerBar';
+
+/** Seções da plataforma — dirige a navbar (desktop) e o menu mobile. */
+const NAV_ITEMS: { key: string; label: string; short: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: 'calculadora', label: 'Calculadora', short: 'Calc.', icon: Calculator },
+  { key: 'comparador', label: 'Comparador', short: 'Comparar', icon: GitCompare },
+  { key: 'cambio', label: 'Câmbio', short: 'Câmbio', icon: Globe },
+  { key: 'ptax', label: 'PTAX BCB', short: 'PTAX', icon: TrendingUp },
+  { key: 'tesouraria', label: 'Tesouraria', short: 'Tesour.', icon: Landmark },
+  { key: 'wacc', label: 'WACC', short: 'WACC', icon: Percent },
+  { key: 'aposentadoria', label: 'Aposentadoria', short: 'Aposent.', icon: PiggyBank },
+  { key: 'indices', label: 'Índices / Admin', short: 'Índices', icon: Database },
+];
 
 const HELP_STEPS = [
   { step: '1', text: 'Selecione o indexador de correção (CDI, IPCA, Selic…)' },
@@ -71,7 +83,7 @@ function EmptyResultsPanel({ onHelp }: { onHelp: () => void }) {
 
 function HelpPopover({ onClose }: { onClose: () => void }) {
   return (
-    <div className="absolute top-12 right-4 z-50 w-80 rounded-lg border border-border bg-popover shadow-xl animate-fade-in">
+    <div className="absolute top-12 right-4 z-50 w-[calc(100vw-2rem)] max-w-xs rounded-lg border border-border bg-popover shadow-xl animate-fade-in">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <span className="text-sm font-semibold text-foreground">Como usar</span>
         <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
@@ -97,6 +109,13 @@ export function HomePage() {
   const [compareResult, setCompareResult] = useState<CompareResult | null>(null);
   const [activeTab, setActiveTab] = useState('calculadora');
   const [showHelp, setShowHelp] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const goTab = (key: string) => {
+    setActiveTab(key);
+    setMobileMenuOpen(false);
+  };
+  const activeLabel = NAV_ITEMS.find(i => i.key === activeTab)?.label ?? '';
 
   const handleResult = (r: CalculationResult) => {
     setResult(r);
@@ -110,74 +129,93 @@ export function HomePage() {
 
 
       {/* ── Cabeçalho Fixo: Cotações + Navbar ── */}
-      <div className="fixed top-0 left-0 right-0 z-50">
+      <div className="fixed top-0 left-0 right-0 z-50 bg-background" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         {/* ── Cotações em Tempo Real (global) ── */}
         <LiveTickerBar />
       
         {/* ── Navbar Global ── */}
         <header className="border-b border-white/5 bg-background/80 backdrop-blur-xl">
-        <div className="max-w-[1600px] mx-auto h-16 flex items-center justify-between px-6">
-          <a href="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
-            <TrendingUp className="h-5 w-5 text-primary" />
-            <span className="font-bold text-lg text-foreground tracking-tight">Correção Financeira</span>
+        <div className="max-w-[1600px] mx-auto h-16 flex items-center justify-between px-4 sm:px-6">
+          <a href="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity min-w-0">
+            <TrendingUp className="h-5 w-5 text-primary shrink-0" />
+            <span className="font-bold text-base sm:text-lg text-foreground tracking-tight truncate">Correção Financeira</span>
           </a>
-          
-          <nav className="hidden md:flex items-center gap-8">
-            <button
-              onClick={() => setActiveTab('calculadora')}
-              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'calculadora' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              Calculadora
-            </button>
-            <button
-              onClick={() => setActiveTab('comparador')}
-              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'comparador' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              Comparador
-            </button>
-            <button
-              onClick={() => setActiveTab('cambio')}
-              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'cambio' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              Câmbio
-            </button>
-            <button
-              onClick={() => setActiveTab('ptax')}
-              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'ptax' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              PTAX BCB
-            </button>
-            <button
-              onClick={() => setActiveTab('tesouraria')}
-              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'tesouraria' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              Tesouraria
-            </button>
-            <button
-              onClick={() => setActiveTab('wacc')}
-              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'wacc' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              WACC (Damodaran)
-            </button>
-            <button
-              onClick={() => setActiveTab('aposentadoria')}
-              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'aposentadoria' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              Aposentadoria
-            </button>
-            <button
-              onClick={() => setActiveTab('indices')}
-              className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'indices' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              Índices/Admin
-            </button>
+
+          {/* Navbar desktop (data-driven) */}
+          <nav className="hidden md:flex items-center gap-5 lg:gap-7">
+            {NAV_ITEMS.map(item => (
+              <button
+                key={item.key}
+                onClick={() => setActiveTab(item.key)}
+                className={`text-sm font-medium transition-colors whitespace-nowrap ${activeTab === item.key ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {item.label}
+              </button>
+            ))}
           </nav>
+
+          {/* Mobile: seção atual + botão de menu */}
+          <div className="flex items-center gap-2 md:hidden">
+            <span className="text-xs font-semibold text-primary/90 max-w-[110px] truncate">{activeLabel}</span>
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Abrir menu"
+              className="h-10 w-10 flex items-center justify-center rounded-lg border border-white/10 bg-white/5 text-foreground active:scale-95 transition-transform"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+          </div>
         </div>
       </header>
       </div>
 
-      {/* ── Espaçador para compensar cabeçalho fixo (ticker 28px + navbar 64px) ── */}
-      <div className="h-[92px] shrink-0" />
+      {/* ── Drawer de navegação mobile ── */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-[60] md:hidden">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <nav
+            className="absolute right-0 top-0 bottom-0 w-[78%] max-w-xs bg-card border-l border-white/10 shadow-2xl flex flex-col animate-slide-in-right"
+            style={{ paddingTop: 'env(safe-area-inset-top)' }}
+          >
+            <div className="flex items-center justify-between px-4 h-16 border-b border-white/5">
+              <span className="flex items-center gap-2 font-bold text-foreground">
+                <TrendingUp className="h-5 w-5 text-primary" /> Menu
+              </span>
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                aria-label="Fechar menu"
+                className="h-10 w-10 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto py-2">
+              {NAV_ITEMS.map(item => {
+                const Icon = item.icon;
+                const active = activeTab === item.key;
+                return (
+                  <button
+                    key={item.key}
+                    onClick={() => goTab(item.key)}
+                    className={`w-full flex items-center gap-3 px-5 py-3.5 text-left transition-colors ${
+                      active ? 'text-primary bg-primary/10 border-l-2 border-primary' : 'text-foreground/80 hover:bg-white/5 border-l-2 border-transparent'
+                    }`}
+                  >
+                    <Icon className="h-5 w-5 shrink-0" />
+                    <span className="text-[15px] font-medium">{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
+        </div>
+      )}
+
+      {/* ── Espaçador do cabeçalho fixo (ticker 32px + navbar 64px + safe-area) ── */}
+      <div className="shrink-0" style={{ height: 'calc(96px + env(safe-area-inset-top))' }} />
 
       <div className="flex-1 flex flex-col relative z-10 bg-black/20">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">

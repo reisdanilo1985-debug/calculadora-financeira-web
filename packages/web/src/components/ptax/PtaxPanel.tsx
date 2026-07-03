@@ -523,7 +523,7 @@ export function PtaxPanel() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-[400px] w-full">
+                  <div className="h-[280px] sm:h-[400px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="currentColor" className="text-border/50" vertical={false} />
