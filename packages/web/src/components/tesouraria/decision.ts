@@ -34,10 +34,11 @@ export interface Veredito {
 
 /** Fração → "14,40%". */
 const fp = (x: number, dec = 2): string =>
-  `${(x * 100).toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec })}%`;
+  isFinite(x) ? `${(x * 100).toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec })}%` : '—';
 
 /** Número → "R$ 1.234,56" (compacto para milhões). */
 const fm = (x: number): string => {
+  if (!isFinite(x)) return '—';
   const abs = Math.abs(x);
   if (abs >= 1e6) return `R$ ${(x / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} mi`;
   if (abs >= 1e3) return `R$ ${(x / 1e3).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil`;
@@ -45,7 +46,7 @@ const fm = (x: number): string => {
 };
 
 const fn = (x: number, dec = 4): string =>
-  x.toLocaleString('pt-BR', { maximumFractionDigits: dec });
+  isFinite(x) ? x.toLocaleString('pt-BR', { maximumFractionDigits: dec }) : '—';
 
 // ── Vereditos por calculador ─────────────────────────────────────────────────
 
