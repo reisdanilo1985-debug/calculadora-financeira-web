@@ -15,6 +15,7 @@ import { describe, it, expect } from 'vitest';
 import {
   conversor,
   crossCcyToCdi,
+  cdiToCrossCcy,
   ipcaMais,
   amortizacao,
   duration,
@@ -59,6 +60,22 @@ describe('Tesouraria · golden master (A) determinadas', () => {
   it('USD → CDI linear (→ 114,27%)', () => {
     const r = crossCcyToCdi({ spreadEstrangeiroAa: 0.08, cdiAa: CDI, cupomEstrangeiroAa: 0.05481 });
     near(r.pctCdiLin, 1.1427, 5e-4);
+  });
+
+  it('USD → CDI + spread: 118,97% do CDI ≡ CDI + 2,73% (composto)', () => {
+    const r = crossCcyToCdi({ spreadEstrangeiroAa: 0.08, cdiAa: CDI, cupomEstrangeiroAa: 0.05481 });
+    // spreadSobreCdiComp = (1+preEquiv)/(1+CDI) − 1
+    near(r.spreadSobreCdiComp, (1 + r.preEquivComp) / (1 + CDI) - 1, 5e-9);
+    near(r.spreadSobreCdiLin, r.preEquivLin - CDI, 5e-9);
+  });
+
+  it('inverso cdiToCrossCcy: round-trip recupera o spread externo', () => {
+    const fwd = crossCcyToCdi({ spreadEstrangeiroAa: 0.08, cdiAa: CDI, cupomEstrangeiroAa: 0.05481 });
+    // parte do CDI + spread composto que o forward produziu e recupera os 8%
+    const inv = cdiToCrossCcy({ cdiAa: CDI, spreadLocalAa: fwd.spreadSobreCdiComp, cupomEstrangeiroAa: 0.05481 });
+    near(inv.spreadEstrangeiroComp, 0.08, 5e-9);
+    // fórmula fechada: (1+spreadLocal)(1+cupom) − 1
+    near(inv.spreadEstrangeiroComp, 1.05481 * (1 + fwd.spreadSobreCdiComp) - 1, 5e-9);
   });
 
   it('IPCA+ → nominal (real 7%, IPCA 4,5% → 11,82%) e %CDI (82,05%)', () => {

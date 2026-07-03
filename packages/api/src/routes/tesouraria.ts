@@ -11,6 +11,7 @@ import { Router, Request, Response } from 'express';
 import {
   conversor,
   crossCcyToCdi,
+  cdiToCrossCcy,
   preParaCdi,
   cdiParaPre,
   cdiSpreadParaPct,
@@ -68,7 +69,7 @@ function parseFluxos(fluxos: any[]): { date: Date; amount: number }[] {
 /** Dispatcher: nome canônico → função do core, com adaptação de inputs. */
 const CALCULADORES: Record<string, (body: any) => unknown> = {
   conversor: b => conversor(b),
-  'cross-ccy': b => crossCcyToCdi(b),
+  'cross-ccy': b => (b.modo === 'cdiParaMoeda' ? cdiToCrossCcy(b) : crossCcyToCdi(b)),
   'pre-cdi': b => (b.modo === 'cdiParaPre' ? cdiParaPre(b) : preParaCdi(b)),
   'cdi-spread': b => (b.modo === 'pctParaSpread' ? pctParaCdiSpread(b) : cdiSpreadParaPct(b)),
   ipca: b => ipcaMais(b),

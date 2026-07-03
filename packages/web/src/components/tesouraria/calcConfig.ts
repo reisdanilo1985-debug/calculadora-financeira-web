@@ -149,10 +149,17 @@ export const CALCULADORES: CalcDef[] = [
   // ──────────────────────── Cross-currency & CDI ────────────────────────
   {
     nome: 'cross-ccy',
-    titulo: 'USD/EUR + spread → % do CDI',
+    titulo: 'USD/EUR + spread ↔ CDI + spread',
     grupo: 'Cross-currency & CDI',
-    descricao: 'Paridade coberta: equivalente travável em % do CDI a partir de spread externo.',
+    descricao: 'Paridade coberta: converte dívida externa em % do CDI / CDI + spread — e o inverso.',
     fields: [
+      {
+        key: 'modo', label: 'Direção', kind: 'select', default: 'moedaParaCdi',
+        options: [
+          { label: 'USD/EUR + spread → CDI + spread', value: 'moedaParaCdi' },
+          { label: 'CDI + spread → USD/EUR + spread', value: 'cdiParaMoeda' },
+        ],
+      },
       {
         key: 'moeda', label: 'Moeda', kind: 'select', default: 'USD',
         options: [
@@ -160,7 +167,8 @@ export const CALCULADORES: CalcDef[] = [
           { label: 'EUR', value: 'EUR' },
         ],
       },
-      { key: 'spreadEstrangeiroAa', label: 'Spread externo a.a. (%)', kind: 'percent', default: 8 },
+      { key: 'spreadEstrangeiroAa', label: 'Spread externo a.a. (%)', kind: 'percent', default: 8, showIf: v => v.modo !== 'cdiParaMoeda' },
+      { key: 'spreadLocalAa', label: 'Spread sobre o CDI a.a. (%)', kind: 'percent', default: 2, showIf: v => v.modo === 'cdiParaMoeda', help: 'A perna local "CDI + X%" a converter em moeda.' },
       { key: 'cdiAa', label: 'CDI a.a. (%)', kind: 'percent', default: 14.4, premise: s => s.escalares.cdiAa * 100 },
       { key: 'prazoDc', label: 'Prazo (dias corridos)', kind: 'int', default: 720, help: 'Vértice da vida média do papel (para interpolar o cupom cambial).' },
       {
@@ -169,11 +177,19 @@ export const CALCULADORES: CalcDef[] = [
         help: 'Interpolado da curva de cupom cambial no prazo (seed na Fase B).',
       },
     ],
-    buildBody: v => ({
-      spreadEstrangeiroAa: pct(v.spreadEstrangeiroAa),
-      cdiAa: pct(v.cdiAa),
-      cupomEstrangeiroAa: pct(v.cupomEstrangeiroAa),
-    }),
+    buildBody: v =>
+      v.modo === 'cdiParaMoeda'
+        ? {
+            modo: 'cdiParaMoeda',
+            cdiAa: pct(v.cdiAa),
+            spreadLocalAa: pct(v.spreadLocalAa),
+            cupomEstrangeiroAa: pct(v.cupomEstrangeiroAa),
+          }
+        : {
+            spreadEstrangeiroAa: pct(v.spreadEstrangeiroAa),
+            cdiAa: pct(v.cdiAa),
+            cupomEstrangeiroAa: pct(v.cupomEstrangeiroAa),
+          },
   },
   {
     nome: 'ipca',

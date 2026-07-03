@@ -107,14 +107,27 @@ const DECISORES: Record<string, DecisorFn> = {
   },
 
   'cross-ccy': (body, r) => {
+    // Direção inversa: CDI + spread → moeda + spread equivalente.
+    if (body.modo === 'cdiParaMoeda' || r.spreadEstrangeiroComp != null) {
+      return {
+        sinal: 'info',
+        frase: `CDI + ${fp(body.spreadLocalAa)} equivale, sob hedge completo, a captar em moeda + ${fp(r.spreadEstrangeiroComp)} (linear ${fp(r.spreadEstrangeiroLin)}).`,
+        criterio: `Régua de negociação: qualquer proposta externa com spread ABAIXO de ${fp(r.spreadEstrangeiroComp)} bate o seu CDI + ${fp(body.spreadLocalAa)} depois do hedge. O elo é o cupom cambial (${fp(body.cupomEstrangeiroAa)}).`,
+        pontes: [
+          { eixo: 'custo', texto: `Use ${fp(r.spreadEstrangeiroComp)} como teto de spread ao cotar dívida externa — acima disso, o funding local é mais barato.` },
+          { eixo: 'risco', texto: 'Comparação já com hedge completo embutido — sem resíduo cambial, só custo contra custo.' },
+        ],
+      };
+    }
     const pct = r.pctCdiComp;
     const sinal: Sinal = pct < 1 ? 'verde' : pct <= 1.15 ? 'amarelo' : 'vermelho';
+    const acimaCdi = r.spreadSobreCdiComp >= 0;
     return {
       sinal,
-      frase: `Captar a ${fp(body.spreadEstrangeiroAa)} em moeda + hedge completo sai por ${fn(pct * 100, 1)}% do CDI (${fp(r.preEquivComp)} a.a. pré).`,
+      frase: `Captar a ${fp(body.spreadEstrangeiroAa)} em moeda + hedge completo sai por ${fn(pct * 100, 1)}% do CDI — ou CDI ${acimaCdi ? '+' : '−'} ${fp(Math.abs(r.spreadSobreCdiComp))} (${fp(r.preEquivComp)} a.a. pré).`,
       criterio: `Sinal: 🟢 abaixo de 100% do CDI · 🟡 até 115% · 🔴 acima. Spread de equilíbrio (= 100% do CDI): ${fp(r.spreadEquilibrio)} — spreads externos abaixo disso batem o funding local.`,
       pontes: [
-        { eixo: 'custo', texto: `Compare os ${fn(pct * 100, 1)}% do CDI com o custo das suas linhas locais para decidir onde captar.` },
+        { eixo: 'custo', texto: `Compare CDI ${acimaCdi ? '+' : '−'} ${fp(Math.abs(r.spreadSobreCdiComp))} (= ${fn(pct * 100, 1)}% do CDI) com o custo das suas linhas locais para decidir onde captar.` },
         { eixo: 'risco', texto: 'Com o hedge completo embutido no cálculo, não sobra risco cambial — sobra só o custo.' },
       ],
     };
