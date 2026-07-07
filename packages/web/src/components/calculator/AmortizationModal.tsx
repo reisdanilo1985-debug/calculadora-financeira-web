@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Download, Upload, FileSpreadsheet } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -10,6 +10,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { downloadScheduleTemplate } from '@/lib/excel/scheduleTemplate';
+import { exportSchedule } from '@/lib/excel/scheduleExport';
+import { ExcelImportDialog } from './ExcelImportDialog';
 
 export interface AmortizationEntry {
   id: string;
@@ -19,6 +22,8 @@ export interface AmortizationEntry {
   periodicity?: string;
   periodicEndDate?: string;
   isPeriodicPercentage?: boolean;
+  /** OUT = amortização (saída, default), IN = aporte/captação (entrada) */
+  direction?: 'OUT' | 'IN';
 }
 
 interface AmortizationModalProps {
@@ -35,12 +40,14 @@ const EMPTY: Omit<AmortizationEntry, 'id'> = {
   periodicity: 'MONTHLY',
   periodicEndDate: '',
   isPeriodicPercentage: false,
+  direction: 'OUT',
 };
 
 export function AmortizationModal({
   open, onOpenChange, amortizations, onChange,
 }: AmortizationModalProps) {
   const [form, setForm] = useState({ ...EMPTY });
+  const [importOpen, setImportOpen] = useState(false);
 
   const add = () => {
     if (!form.date || form.value <= 0) return;
@@ -57,14 +64,74 @@ export function AmortizationModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Cronograma de Amortizações</DialogTitle>
+          <DialogTitle>Cronograma de Amortizações e Aportes</DialogTitle>
         </DialogHeader>
 
-        {/* Formulário de nova amortização */}
+        {/* Barra de ações — Excel */}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline" size="sm" className="gap-1.5"
+            onClick={() => downloadScheduleTemplate()}
+          >
+            <Download className="h-3.5 w-3.5" />
+            Baixar modelo
+          </Button>
+          <Button
+            variant="outline" size="sm" className="gap-1.5"
+            onClick={() => setImportOpen(true)}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Importar Excel
+          </Button>
+          <Button
+            variant="outline" size="sm" className="gap-1.5"
+            disabled={amortizations.length === 0}
+            onClick={() => exportSchedule(amortizations)}
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5" />
+            Exportar
+          </Button>
+        </div>
+
+        <ExcelImportDialog
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          current={amortizations}
+          onImport={onChange}
+        />
+
+        {/* Formulário de novo lançamento */}
         <div className="border rounded-lg p-4 space-y-4 bg-muted/30">
           <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-            Nova Amortização
+            Novo Lançamento
           </h4>
+
+          {/* Direção: amortização (saída) vs aporte (entrada) */}
+          <div className="flex rounded-lg border border-border overflow-hidden w-fit">
+            <button
+              type="button"
+              onClick={() => setForm(f => ({ ...f, direction: 'OUT' }))}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
+                form.direction !== 'IN'
+                  ? 'bg-primary/15 text-primary'
+                  : 'bg-input text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Amortização (saída)
+            </button>
+            <button
+              type="button"
+              onClick={() => setForm(f => ({ ...f, direction: 'IN' }))}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
+                form.direction === 'IN'
+                  ? 'bg-cyan-500/15 text-cyan-400'
+                  : 'bg-input text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Aporte (entrada)
+            </button>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Data</Label>
@@ -136,11 +203,11 @@ export function AmortizationModal({
           </Button>
         </div>
 
-        {/* Lista de amortizações */}
+        {/* Lista de lançamentos */}
         {amortizations.length > 0 && (
           <div className="space-y-2">
             <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-              Amortizações Cadastradas ({amortizations.length})
+              Lançamentos Cadastrados ({amortizations.length})
             </h4>
             <div className="space-y-1.5 max-h-48 overflow-y-auto scrollbar-thin">
               {amortizations
@@ -151,7 +218,16 @@ export function AmortizationModal({
                     key={a.id}
                     className="flex items-center justify-between p-2.5 rounded-md bg-card border text-sm"
                   >
-                    <div className="flex gap-4">
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider ${
+                          a.direction === 'IN'
+                            ? 'bg-cyan-500/15 text-cyan-400'
+                            : 'bg-primary/15 text-primary'
+                        }`}
+                      >
+                        {a.direction === 'IN' ? 'Aporte' : 'Amort.'}
+                      </span>
                       <span className="text-muted-foreground font-mono">
                         {formatDate(new Date(a.date))}
                       </span>

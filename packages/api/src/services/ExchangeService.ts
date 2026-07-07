@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { Currency, ExchangeRatePoint, ExchangeSummaryMetrics } from '@correcao/core';
+import { proxyConfig } from './marketdata/proxyAgent';
 import logger from '../middleware/logger';
 
 const SGS_SERIES: Partial<Record<Currency, number>> = {
@@ -40,7 +41,7 @@ export async function getExchangeRates(
         dataFinal: formatDateSGS(endDate)
       };
       
-      const { data } = await axios.get(url, { params, timeout: 15000 });
+      const { data } = await axios.get(url, { params, timeout: 15000, ...proxyConfig() });
       
       return data.map((item: any) => {
         const [day, month, year] = item.data.split('/');
@@ -56,9 +57,10 @@ export async function getExchangeRates(
       const endStr = endDate.toISOString().slice(0, 10).replace(/-/g, '');
       
       const url = `https://economia.awesomeapi.com.br/json/daily/${currency}-BRL/10000`;
-      const { data } = await axios.get(url, { 
+      const { data } = await axios.get(url, {
         params: { start_date: startStr, end_date: endStr },
-        timeout: 15000 
+        timeout: 15000,
+        ...proxyConfig(),
       });
 
       return data.map((item: any) => ({

@@ -8,6 +8,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import {
   conversor,
   crossCcyToCdi,
@@ -58,12 +59,148 @@ tesourariaRouter.post('/premissas/refresh', async (req: Request, res: Response) 
   }
 });
 
-// ─────────────────────────────── Calculadores ────────────────────────────────
+// ─────────────────────────────── Validação (zod) ──────────────────────────────
+
+/** Aceita number ou string numérica (BR "1.234,56" ou "1234.56") e converte para number finito. */
+const numeroFlexivel = z
+  .union([z.number(), z.string()])
+  .transform((v, ctx) => {
+    const n = typeof v === 'number' ? v : Number(String(v).trim().replace(/\./g, '').replace(',', '.'));
+    if (!Number.isFinite(n)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'deve ser um número válido' });
+      return z.NEVER;
+    }
+    return n;
+  });
+
+const dataFlexivel = z
+  .union([z.string(), z.date()])
+  .transform((v, ctx) => {
+    const d = v instanceof Date ? v : new Date(v);
+    if (isNaN(d.getTime())) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'data inválida' });
+      return z.NEVER;
+    }
+    return d;
+  });
+
+const fluxoSchema = z.object({
+  date: dataFlexivel,
+  amount: numeroFlexivel,
+});
+
+/** Schemas por calculador — valida os campos numéricos/data que a rota manipula antes de repassar ao core. */
+const BODY_SCHEMAS: Record<string, z.ZodTypeAny> = {
+  conversor: z.object({
+    iaa: numeroFlexivel,
+    du: numeroFlexivel.optional(),
+    dc: numeroFlexivel.optional(),
+    m: numeroFlexivel.optional(),
+  }),
+  'cross-ccy': z.object({
+    modo: z.enum(['cdiParaMoeda', 'moedaParaCdi']).optional(),
+    spreadEstrangeiroAa: numeroFlexivel.optional(),
+    cdiAa: numeroFlexivel,
+    cupomEstrangeiroAa: numeroFlexivel,
+    spreadLocalAa: numeroFlexivel.optional(),
+  }),
+  'pre-cdi': z.object({
+    modo: z.enum(['cdiParaPre', 'preParaCdi']).optional(),
+    preAa: numeroFlexivel.optional(),
+    pctCdi: numeroFlexivel.optional(),
+    cdiAa: numeroFlexivel,
+  }),
+  'cdi-spread': z.object({
+    modo: z.enum(['pctParaSpread', 'spreadParaPct']).optional(),
+    cdiAa: numeroFlexivel,
+    spreadAa: numeroFlexivel.optional(),
+    pctCdi: numeroFlexivel.optional(),
+  }),
+  ipca: z.object({
+    realAa: numeroFlexivel,
+    ipcaAa: numeroFlexivel,
+    cdiAa: numeroFlexivel,
+    preMercadoAa: numeroFlexivel.optional(),
+  }),
+  'tir-vpl': z.object({
+    fluxos: z.array(fluxoSchema).min(1, 'informe ao menos um fluxo'),
+    taxaDesconto: numeroFlexivel.optional(),
+    custoCapital: numeroFlexivel.optional(),
+  }),
+  amortizacao: z.object({
+    principal: numeroFlexivel,
+    i: numeroFlexivel,
+    n: numeroFlexivel,
+  }),
+  duration: z.object({
+    face: numeroFlexivel,
+    couponRateAnnual: numeroFlexivel,
+    ytm: numeroFlexivel,
+    m: numeroFlexivel,
+    n: numeroFlexivel,
+  }),
+  'pu-titulos': z.object({
+    tipo: z.enum(['LTN', 'NTNF']).optional(),
+    vn: numeroFlexivel.optional(),
+    face: numeroFlexivel.optional(),
+    iaa: numeroFlexivel,
+    du: numeroFlexivel.optional(),
+    couponRateAnnual: numeroFlexivel.optional(),
+    m: numeroFlexivel.optional(),
+    cuponsDu: z.array(numeroFlexivel).optional(),
+  }),
+  swap: z.object({
+    notional: numeroFlexivel,
+    preContratada: numeroFlexivel,
+    preMercadoAa: numeroFlexivel,
+    duTotal: numeroFlexivel,
+    duDecorridos: numeroFlexivel,
+    fatorCdiAcumulado: numeroFlexivel,
+  }),
+  'forward-ndf': z.object({
+    modo: z.enum(['forward', 'ndf']).optional(),
+    spot: numeroFlexivel.optional(),
+    iBrAa: numeroFlexivel.optional(),
+    du: numeroFlexivel.optional(),
+    cupomUsdAa: numeroFlexivel.optional(),
+    dc: numeroFlexivel.optional(),
+    ptaxVencimento: numeroFlexivel.optional(),
+    kContratado: numeroFlexivel.optional(),
+    notionalUsd: numeroFlexivel.optional(),
+  }),
+  'us-money-market': z
+    .object({
+      modo: z.enum(['sofr', 'juros', 'tbill']).optional(),
+      face: numeroFlexivel.optional(),
+      preco: numeroFlexivel.optional(),
+      dias: numeroFlexivel.optional(),
+      sofrAa: numeroFlexivel.optional(),
+      spreadAa: numeroFlexivel.optional(),
+      notional: numeroFlexivel.optional(),
+      taxa: numeroFlexivel.optional(),
+      d0: dataFlexivel.optional(),
+      d1: dataFlexivel.optional(),
+    })
+    .refine(b => b.modo !== 'juros' || (b.d0 && b.d1), { message: 'd0 e d1 são obrigatórios no modo "juros"' }),
+};
+
+/** Schema genérico de fallback: objeto simples, sem campos extras exigidos. */
+const GENERIC_SCHEMA = z.record(z.unknown());
+
+function validateBody(nome: string, body: unknown): { data?: any; error?: string } {
+  const schema = BODY_SCHEMAS[nome] ?? GENERIC_SCHEMA;
+  const parsed = schema.safeParse(body ?? {});
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    const path = first.path.join('.');
+    return { error: `${path ? path + ': ' : ''}${first.message}` };
+  }
+  return { data: parsed.data };
+}
 
 /** Converte fluxos com data string → Date. */
 function parseFluxos(fluxos: any[]): { date: Date; amount: number }[] {
-  if (!Array.isArray(fluxos)) throw new Error('fluxos deve ser uma lista.');
-  return fluxos.map(f => ({ date: new Date(f.date), amount: Number(f.amount) }));
+  return fluxos.map(f => ({ date: f.date instanceof Date ? f.date : new Date(f.date), amount: Number(f.amount) }));
 }
 
 /** Dispatcher: nome canônico → função do core, com adaptação de inputs. */
@@ -98,8 +235,14 @@ tesourariaRouter.post('/calc/:nome', (req: Request, res: Response) => {
   if (!fn) {
     return res.status(404).json({ error: `Calculador desconhecido: ${nome}` });
   }
+
+  const { data, error } = validateBody(nome, req.body);
+  if (error) {
+    return res.status(400).json({ error: `Payload inválido — ${error}` });
+  }
+
   try {
-    const result = fn(req.body ?? {});
+    const result = fn(data);
     return res.json(result);
   } catch (error: any) {
     logger.warn(`[TESOURARIA] Erro em ${nome}: ${error.message}`);

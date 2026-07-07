@@ -3,6 +3,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import {
   CalculationInput,
   IndexType,
@@ -20,6 +21,53 @@ import { getSOFRWithCache } from '../services/FREDService';
 import logger from '../middleware/logger';
 
 export const calculateRouter = Router();
+
+/**
+ * Validação leve de tipos (não de regras de negócio — isso permanece por tese
+ * mais abaixo). Objetivo: rejeitar com 400 claro em vez de deixar `Number()`/
+ * `new Date()` produzirem `NaN`/`Invalid Date` silenciosos que só explodiriam
+ * dentro do core.
+ */
+const amortizationSchema = z.object({
+  date: z.string(),
+  type: z.string(),
+  value: z.number(),
+  periodicity: z.string().optional(),
+  periodicEndDate: z.string().optional(),
+  isPeriodicPercentage: z.boolean().optional(),
+  direction: z.string().optional(),
+});
+
+const calculateBodySchema = z.object({
+  thesisType: z.string().optional(),
+  initialAmount: z.number().optional(),
+  startDate: z.string(),
+  endDate: z.string().optional(),
+  indexType: z.string().optional(),
+  dayCountBasis: z.union([z.string(), z.number()]).optional(),
+  currency: z.string().optional(),
+  prefixedRate: z.number().optional(),
+  spread: z
+    .object({
+      mode: z.enum(['percentage', 'additive']),
+      value: z.number(),
+      additiveBase: z.string().optional(),
+    })
+    .optional(),
+  amortizations: z.array(amortizationSchema).optional(),
+  futurePremises: z.array(z.object({ startDate: z.string(), endDate: z.string(), rate: z.number() })).optional(),
+  gracePeriod: z.object({ type: z.string(), endDate: z.string() }).optional(),
+  cashFlows: z
+    .array(z.object({ id: z.string().optional(), date: z.string(), amount: z.number(), label: z.string().optional() }))
+    .optional(),
+  discountRate: z.number().optional(),
+  referenceDate: z.string().optional(),
+  amortizationSystem: z.string().optional(),
+  remunerationRate: z.number().optional(),
+  numberOfPeriods: z.number().optional(),
+  interestType: z.string().optional(),
+  interestRate: z.number().optional(),
+});
 
 interface CalculateRequest {
   // Tese
@@ -45,6 +93,8 @@ interface CalculateRequest {
     periodicity?: string;
     periodicEndDate?: string;
     isPeriodicPercentage?: boolean;
+    /** OUT = amortização (default), IN = aporte/captação */
+    direction?: string;
   }[];
   futurePremises?: {
     startDate: string;
@@ -89,7 +139,13 @@ async function fetchIndexData(
 }
 
 calculateRouter.post('/', async (req: Request, res: Response) => {
-  const body = req.body as CalculateRequest;
+  const parsed = calculateBodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    const path = first.path.join('.');
+    return res.status(400).json({ error: `Payload inválido — ${path ? path + ': ' : ''}${first.message}` });
+  }
+  const body = parsed.data as CalculateRequest;
 
   try {
     const thesis = body.thesisType ?? ThesisType.CORRECAO_SIMPLES;
@@ -101,7 +157,9 @@ calculateRouter.post('/', async (req: Request, res: Response) => {
     }
 
     const startDate = new Date(body.startDate);
-    const endDate = new Date(body.endDate);
+    // endDate é opcional para VALOR_PRESENTE/FLUXO_COMPLETO (needsEndDate=false) — nesse
+    // caso, sem endDate informado, usa startDate como placeholder em vez de Invalid Date.
+    const endDate = body.endDate ? new Date(body.endDate) : new Date(startDate);
     startDate.setHours(0, 0, 0, 0);
     endDate.setHours(0, 0, 0, 0);
 
@@ -220,6 +278,7 @@ calculateRouter.post('/', async (req: Request, res: Response) => {
         periodicity: a.periodicity as any,
         periodicEndDate: a.periodicEndDate ? new Date(a.periodicEndDate) : undefined,
         isPeriodicPercentage: a.isPeriodicPercentage,
+        direction: a.direction as any,
       })),
       futurePremises: body.futurePremises?.map(p => ({
         startDate: new Date(p.startDate),

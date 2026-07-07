@@ -15,6 +15,21 @@ import logger from '../middleware/logger';
 
 export const indicesRouter = Router();
 
+/**
+ * Aceita tanto DD/MM/YYYY (convenção do parâmetro `dataInicial`/`dataFinal`,
+ * espelhando a API do BCB) quanto ISO YYYY-MM-DD. `new Date('31/01/2024')`
+ * seria interpretado como MM/DD/YYYY (Invalid Date) e `new Date('01/10/2024')`
+ * trocaria dia/mês silenciosamente — por isso o parse explícito.
+ */
+function parseDataParam(valor: string): Date {
+  const brMatch = valor.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (brMatch) {
+    const [, d, m, y] = brMatch;
+    return new Date(Number(y), Number(m) - 1, Number(d));
+  }
+  return new Date(valor);
+}
+
 /** GET /api/indices/cache/status */
 indicesRouter.get('/cache/status', (_req: Request, res: Response) => {
   const meta = getAllCacheMeta();
@@ -30,8 +45,8 @@ indicesRouter.get('/:tipo', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'dataInicial e dataFinal são obrigatórios' });
   }
 
-  const start = new Date(dataInicial as string);
-  const end = new Date(dataFinal as string);
+  const start = parseDataParam(dataInicial as string);
+  const end = parseDataParam(dataFinal as string);
 
   if (isNaN(start.getTime()) || isNaN(end.getTime())) {
     return res.status(400).json({ error: 'Datas inválidas' });

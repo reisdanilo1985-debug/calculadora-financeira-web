@@ -40,11 +40,25 @@ retirementRouter.post('/calcular', (req: Request, res: Response) => {
       return res.status(400).json({ error: 'perfilRisco deve ser: conservador, moderado ou agressivo' });
     }
 
-    // Defaults
+    // Defaults — campos numéricos ausentes viram 0 (não NaN); booleanos, false.
     input.expectativaVida = input.expectativaVida || 90;
     input.ipcaMeta = input.ipcaMeta || 3.5;
     input.numeroSimulacoes = Math.min(input.numeroSimulacoes || 1000, 5000);
     input.tabelaPGBL = input.tabelaPGBL || 'regressiva';
+    input.patrimonioTributavel = input.patrimonioTributavel || 0;
+    input.saldoPGBL = input.saldoPGBL || 0;
+    input.saldoVGBL = input.saldoVGBL || 0;
+    input.rendaAluguel = input.rendaAluguel || 0;
+    input.aporteMensal = input.aporteMensal || 0;
+    input.aportePGBL = input.aportePGBL || 0;
+    input.aporteVGBL = input.aporteVGBL || 0;
+    input.incluirINSS = input.incluirINSS ?? false;
+    input.salarioContribuicao = input.salarioContribuicao || 0;
+    input.tempoContribuicaoAnos = input.tempoContribuicaoAnos || 0;
+    input.gastoMensalDesejado = input.gastoMensalDesejado || 0;
+    input.incluirInflacaoMedica = input.incluirInflacaoMedica ?? false;
+    input.gastoMensalSaude = input.gastoMensalSaude || 0;
+    input.genero = input.genero || 'M';
 
     logger.info('retirement.calcular', { idadeAtual: input.idadeAtual, perfil: input.perfilRisco });
 
