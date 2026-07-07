@@ -104,12 +104,33 @@ function HelpPopover({ onClose }: { onClose: () => void }) {
   );
 }
 
-export function HomePage() {
+interface HomePageProps {
+  /** Aba inicial vinda da rota (#/app/:tab). */
+  initialTab?: string;
+}
+
+export function HomePage({ initialTab }: HomePageProps) {
   const [result, setResult] = useState<CalculationResult | null>(null);
   const [compareResult, setCompareResult] = useState<CompareResult | null>(null);
-  const [activeTab, setActiveTab] = useState('calculadora');
+  const [activeTab, setActiveTab] = useState(initialTab ?? 'calculadora');
   const [showHelp, setShowHelp] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Reage a navegação externa (ex.: link do rodapé da landing muda o hash)
+  React.useEffect(() => {
+    if (initialTab && initialTab !== activeTab) {
+      setActiveTab(initialTab);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTab]);
+
+  // Mantém o hash sincronizado com a aba ativa (deep-linking)
+  React.useEffect(() => {
+    const target = `#/app/${activeTab}`;
+    if (window.location.hash !== target) {
+      window.history.replaceState(null, '', target);
+    }
+  }, [activeTab]);
 
   const goTab = (key: string) => {
     setActiveTab(key);
@@ -136,7 +157,7 @@ export function HomePage() {
         {/* ── Navbar Global ── */}
         <header className="border-b border-white/5 bg-background/80 backdrop-blur-xl">
         <div className="max-w-[1600px] mx-auto h-16 flex items-center justify-between px-4 sm:px-6">
-          <a href="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity min-w-0">
+          <a href="#/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity min-w-0">
             <TrendingUp className="h-5 w-5 text-primary shrink-0" />
             <span className="font-bold text-base sm:text-lg text-foreground tracking-tight truncate">Correção Financeira</span>
           </a>

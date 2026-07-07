@@ -1,122 +1,97 @@
-import React from 'react';
-import { TrendingUp, GitCompare, Globe, ShieldCheck, Database, ArrowRight } from 'lucide-react';
-import { LiveTickerBar } from '../components/dashboard/LiveTickerBar';
+import React, { useRef } from 'react';
+import { ArrowRight, TrendingUp } from 'lucide-react';
+import { LiveTickerBar } from '@/components/dashboard/LiveTickerBar';
+import { HeroSection } from '@/components/landing/HeroSection';
+import { TerminalPreview } from '@/components/landing/TerminalPreview';
+import { QuickCalcWidget } from '@/components/landing/QuickCalcWidget';
+import { StatsBar } from '@/components/landing/StatsBar';
+import { FeatureShowcase } from '@/components/landing/FeatureShowcase';
+import { PersonaSection } from '@/components/landing/PersonaSection';
+import { DataSourcesSection } from '@/components/landing/DataSourcesSection';
+import { FinalCTASection } from '@/components/landing/FinalCTASection';
+import { LandingFooter } from '@/components/landing/LandingFooter';
+
+const NAV_LINKS = [
+  { label: 'Funcionalidades', anchor: 'funcionalidades' },
+  { label: 'Casos de uso', anchor: 'casos-de-uso' },
+  { label: 'Fontes', anchor: 'fontes' },
+];
 
 interface LandingPageProps {
   onNavigate: (view: string) => void;
 }
 
 export function LandingPage({ onNavigate }: LandingPageProps) {
+  const demoRef = useRef<HTMLDivElement>(null);
+
+  const scrollToAnchor = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
-    <div className="flex-1 flex flex-col relative w-full overflow-y-auto">
-      
-      {/* ── Background Decorativo ── */}
-      <div className="absolute top-[-10%] right-[-5%] w-[800px] h-[800px] bg-primary/5 rounded-full blur-[150px] pointer-events-none mix-blend-screen" />
-      <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] bg-secondary/10 rounded-full blur-[120px] pointer-events-none mix-blend-screen" />
+    <div className="min-h-screen bg-background flex flex-col relative">
+      {/* ── Background decorativo ── */}
+      <div className="fixed top-[-10%] right-[-5%] w-[800px] h-[800px] bg-primary/5 rounded-full blur-[150px] pointer-events-none mix-blend-screen animate-float" />
+      <div className="fixed bottom-[-10%] left-[-10%] w-[600px] h-[600px] bg-secondary/10 rounded-full blur-[120px] pointer-events-none mix-blend-screen" />
 
-      {/* ── Hero Section ── */}
-      <section className="relative w-full pt-20 pb-24 px-6 flex flex-col items-center justify-center text-center z-10 min-h-[500px]">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-medium mb-6 animate-fade-in">
-          <ShieldCheck className="h-4 w-4" />
-          <span>Auditoria Financeira Suprema</span>
-        </div>
-        
-        <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-foreground max-w-4xl mb-6 leading-tight animate-slide-in-right">
-          O Padrão Ouro em <br className="hidden md:block" />
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-cyan-400">
-            Modelagem Econômica
-          </span>
-        </h1>
-        
-        <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mb-10 leading-relaxed font-light">
-          A plataforma definitiva para cálculos complexos, simulação de múltiplos cenários rentáveis e análise global de moedas. Tenha o poder do Banco Central e dos mercados mundiais no seu navegador.
-        </p>
+      {/* ── Cabeçalho: ticker real + navbar da landing ── */}
+      <div className="sticky top-0 z-50 bg-background" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+        <LiveTickerBar />
+        <header className="border-b border-white/5 bg-background/80 backdrop-blur-xl">
+          <div className="max-w-[1200px] mx-auto h-16 flex items-center justify-between px-4 sm:px-6">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <TrendingUp className="h-5 w-5 text-primary shrink-0" />
+              <span className="font-bold text-base sm:text-lg text-foreground tracking-tight truncate">
+                Correção Financeira
+              </span>
+            </div>
 
-        <div className="flex flex-col sm:flex-row gap-4 items-center justify-center w-full">
-          <button
-            onClick={() => onNavigate('calculadora')}
-            className="flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-8 py-3.5 rounded-lg transition-all w-full sm:w-auto shadow-[0_0_20px_rgba(45,212,191,0.3)] hover:shadow-[0_0_30px_rgba(45,212,191,0.5)] hover:-translate-y-0.5"
-          >
-            Acessar Terminal
-            <ArrowRight className="h-4 w-4" />
-          </button>
-          
-          <button
-            onClick={() => onNavigate('cambio')}
-            className="flex items-center justify-center gap-2 bg-card hover:bg-card/80 border border-white/10 text-foreground font-medium px-8 py-3.5 rounded-lg transition-all w-full sm:w-auto hover:-translate-y-0.5"
-          >
-            <Globe className="h-4 w-4 text-muted-foreground" />
-            Explorar Câmbio
-          </button>
-        </div>
-      </section>
+            <nav className="hidden md:flex items-center gap-7">
+              {NAV_LINKS.map(link => (
+                <button
+                  key={link.anchor}
+                  onClick={() => scrollToAnchor(link.anchor)}
+                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {link.label}
+                </button>
+              ))}
+            </nav>
 
-      {/* ── Feature Cards (Ficheiros) ── */}
-      <section className="w-full max-w-[1200px] mx-auto px-6 pb-24 z-10">
-        <div className="text-center mb-12">
-          <h2 className="text-2xl font-bold text-foreground">A suíte completa de ferramentas</h2>
-          <p className="text-sm text-muted-foreground mt-2">Navegue pelas nossas engrenagens primárias de alta performance</p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <FeatureCard 
-            icon={TrendingUp}
-            title="Calculadora Oficial"
-            desc="Motor de correção monetária instantâneo baseado em CDI, IPCA, Selic, SOFR e mais. Precisão com fator acumulado diário perfeitamente alinhado com o BACEN."
-            color="text-emerald-400"
-            onClick={() => onNavigate('calculadora')}
-          />
-          <FeatureCard 
-            icon={GitCompare}
-            title="Comparador de Cenários"
-            desc="Crie e compare simultaneamente múltiplas projeções financeiras. Descubra qual indexador oferece a melhor rentabilidade ou o menor custo em segundos."
-            color="text-cyan-400"
-            onClick={() => onNavigate('comparador')}
-          />
-          <FeatureCard 
-            icon={Globe}
-            title="Central de Câmbio"
-            desc="Cross-rate de moedas globais (USD, EUR, GBP, JPY, CNY) com gráficos dinâmicos de alta interatividade e capacidade imediata de exportação CSV para planilhas."
-            color="text-violet-400"
-            onClick={() => onNavigate('cambio')}
-          />
-        </div>
-      </section>
-      
-      {/* ── Trust Section ── */}
-      <section className="w-full border-t border-white/5 bg-black/40 py-16 mt-auto z-10">
-        <div className="max-w-[1200px] mx-auto px-6 text-center">
-          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-8">
-            Fontes de Dados Em Tempo Real Integradas
-          </p>
-          <div className="flex flex-wrap justify-center items-center gap-8 md:gap-16 opacity-50 grayscale">
-            <div className="flex items-center gap-2 font-bold text-lg"><Database className="h-5 w-5"/> Banco Central do Brasil</div>
-            <div className="flex items-center gap-2 font-bold text-lg"><TrendingUp className="h-5 w-5"/> IBGE / FGV</div>
-            <div className="flex items-center gap-2 font-bold text-lg"><Globe className="h-5 w-5"/> FRED St. Louis</div>
-            <div className="flex items-center gap-2 font-bold text-lg"><Globe className="h-5 w-5"/> Yahoo Finance API</div>
+            <button
+              onClick={() => onNavigate('calculadora')}
+              className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-semibold px-4 py-2 rounded-lg transition-all"
+            >
+              Acessar Terminal
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
           </div>
-        </div>
-      </section>
-    </div>
-  );
-}
+        </header>
+      </div>
 
-function FeatureCard({ icon: Icon, title, desc, color, onClick }: any) {
-  return (
-    <div 
-      onClick={onClick}
-      className="glass-card p-6 flex flex-col items-start text-left cursor-pointer hover:bg-white/[0.03] transition-all group"
-    >
-      <div className={`p-3 rounded-xl bg-black/40 border border-white/5 mb-4 group-hover:scale-110 transition-transform ${color}`}>
-        <Icon className="h-6 w-6" />
-      </div>
-      <h3 className="text-lg font-semibold text-foreground mb-2 group-hover:text-primary transition-colors">{title}</h3>
-      <p className="text-sm text-muted-foreground leading-relaxed">
-        {desc}
-      </p>
-      <div className="mt-6 flex items-center gap-2 text-xs font-medium text-primary opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all">
-        Acessar Ferramenta <ArrowRight className="h-3 w-3" />
-      </div>
+      {/* ── Conteúdo ── */}
+      <main className="flex-1 flex flex-col relative">
+        <HeroSection
+          onNavigate={onNavigate}
+          onSeeDemo={() => demoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+        />
+
+        <div ref={demoRef}>
+          <TerminalPreview />
+        </div>
+
+        <div className="w-full max-w-[1000px] mx-auto px-6 pb-20 z-10 relative">
+          <QuickCalcWidget onNavigate={onNavigate} />
+        </div>
+
+        <StatsBar />
+        <FeatureShowcase onNavigate={onNavigate} />
+        <PersonaSection onNavigate={onNavigate} />
+        <DataSourcesSection />
+        <FinalCTASection onNavigate={onNavigate} />
+      </main>
+
+      <LandingFooter onNavigate={onNavigate} />
     </div>
   );
 }
