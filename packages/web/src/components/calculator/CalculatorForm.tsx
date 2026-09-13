@@ -16,15 +16,17 @@ import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,
 } from '@/components/ui/accordion';
 import { DateInputBR } from '@/components/ui/date-input-br';
-import { AmortizationModal, AmortizationEntry } from './AmortizationModal';
 import { FuturePremisesModal, FuturePremise } from './FuturePremisesModal';
 import { FlowsEditor, FlowRow, linhasVazias } from '@/components/ui/flows-editor';
+import {
+  MODELO_AMORTIZACOES, MODELO_VALOR_PRESENTE, fluxosValidos, lerLinhaFluxo,
+} from '@/lib/planilhaFluxos';
 import { lerNumeroPtBr } from '@/lib/numeroPtBr';
 import {
   runCalculation, CalculationResult, CalculationRequest,
   ThesisType, GracePeriodType, AmortizationSystem, Periodicity,
 } from '@/lib/api';
-import { INDEX_LABELS, BASIS_LABELS } from '@/lib/utils';
+import { INDEX_LABELS, BASIS_LABELS, formatCurrency } from '@/lib/utils';
 import { toAnnual, RateMode } from '@/lib/rateConversion';
 import { hojeISO, somarMesesISO } from '@/lib/datas';
 import axios from 'axios';
@@ -170,8 +172,10 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
   const additiveBaseLabel = isDailyBrIndex ? '252 d.u.' : indexType === 'SOFR' ? 'ACT/360' : `dias corridos/${basis === 360 ? 360 : 365}`;
   const [prefixedRate, setPrefixedRate] = useState<number>(0);
   const [prefixedRateMode, setPrefixedRateMode] = useState<RateMode>('aa');
-  const [amortizations, setAmortizations] = useState<AmortizationEntry[]>([]);
-  const [showAmortModal, setShowAmortModal] = useState(false);
+  // Amortizações (valor negativo) e aportes (positivo), em R$ ou % do saldo
+  const [amortRows, setAmortRows] = useState<FlowRow[]>(() => linhasVazias(2, MODELO_AMORTIZACOES));
+  const [amortTocados, setAmortTocados] = useState<Record<number, boolean>>({});
+  const [amortTentouEnviar, setAmortTentouEnviar] = useState(false);
   const [premises, setPremises] = useState<FuturePremise[]>([]);
   const [premisesModal, setPremisesModal] = useState<{
     open: boolean; requiredFrom: string;
@@ -240,7 +244,9 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
     setSpreadValue(0);
     setPrefixedRate(0);
     setPrefixedRateMode('aa');
-    setAmortizations([]);
+    setAmortRows(linhasVazias(2, MODELO_AMORTIZACOES));
+    setAmortTocados({});
+    setAmortTentouEnviar(false);
     setPremises([]);
     setDcfRows(linhasVazias());
     setDcfTocados({});
@@ -269,23 +275,24 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
     setError(null);
   };
 
-  // ── T2: leitura dos fluxos e da perpetuidade ──
+  // ── Fluxos (Valor Presente e amortizações): mesma regra do editor e da planilha ──
   const erroLinhaFluxo = (i: number): string | undefined => {
     const r = dcfRows[i];
-    if (!r) return undefined;
-    const leitura = lerValorFluxo(r.amount);
-    if (leitura.tipo === 'erro') return leitura.mensagem;
-    if (leitura.tipo === 'ok' && !r.date) return 'Informe a data do fluxo.';
-    if (leitura.tipo === 'vazio' && r.date) return 'Informe o valor do fluxo.';
-    return undefined;
+    const leitura = r ? lerLinhaFluxo(r, MODELO_VALOR_PRESENTE) : null;
+    return leitura?.tipo === 'erro' ? leitura.mensagem : undefined;
   };
   const erroLinhaVisivel = (i: number) => (dcfTentouEnviar || dcfTocados[i] ? erroLinhaFluxo(i) : undefined);
 
   const fluxosDcf = (): { date: string; amount: number }[] =>
-    dcfRows.flatMap(r => {
-      const leitura = lerValorFluxo(r.amount);
-      return r.date && leitura.tipo === 'ok' ? [{ date: r.date, amount: leitura.valor }] : [];
-    });
+    fluxosValidos(dcfRows, MODELO_VALOR_PRESENTE).map(f => ({ date: f.date, amount: f.valor }));
+
+  const erroLinhaAmort = (i: number): string | undefined => {
+    const r = amortRows[i];
+    const leitura = r ? lerLinhaFluxo(r, MODELO_AMORTIZACOES) : null;
+    return leitura?.tipo === 'erro' ? leitura.mensagem : undefined;
+  };
+  const erroLinhaAmortVisivel = (i: number) => (amortTentouEnviar || amortTocados[i] ? erroLinhaAmort(i) : undefined);
+  const lancamentosAmort = fluxosValidos(amortRows, MODELO_AMORTIZACOES);
 
   const leituraBasePerpetuidade = lerValorFluxo(perpBase);
   const crescimentoPerpetuidade = parseFloat(perpGrowth);
@@ -358,16 +365,12 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
             additiveBase: spreadMode === 'additive' && isDailyBrIndex ? 252 : undefined,
           }
         : undefined,
-      amortizations: amortizations.map(a => ({
-        date: a.date + 'T12:00:00',
-        type: a.type,
-        value: a.value,
-        periodicity: a.periodicity,
-        periodicEndDate: a.periodicEndDate
-          ? a.periodicEndDate + 'T12:00:00'
-          : undefined,
-        isPeriodicPercentage: a.isPeriodicPercentage,
-        direction: a.direction,
+      // Valor negativo = amortização (sai do saldo); positivo = aporte (entra no saldo)
+      amortizations: lancamentosAmort.map(f => ({
+        date: f.date + 'T12:00:00',
+        type: f.unit === '%' ? 'PERCENTAGE' : 'FIXED',
+        value: Math.abs(f.valor),
+        direction: f.valor < 0 ? 'OUT' : 'IN',
       })),
       futurePremises: withPremises.map(p => ({
         startDate: p.startDate + 'T12:00:00',
@@ -413,6 +416,8 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
       if (!startDate) return 'Informe a data de início.';
       return null;
     }
+    // T1, T3, T5: lançamentos de amortizações e aportes com erro bloqueiam o cálculo
+    if (amortRows.some((_, i) => erroLinhaAmort(i))) return 'Corrija os lançamentos de amortizações e aportes destacados.';
     if (thesis === 'CORRECAO_COM_JUROS') {
       if (!amount || !startDate || !endDate) return 'Preencha todos os campos obrigatórios.';
       if (!interestRate || interestRate <= 0) return 'Informe a taxa de juros.';
@@ -424,6 +429,7 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
 
   const submit = async (withPremises: FuturePremise[] = premises) => {
     if (thesis === 'VALOR_PRESENTE') setDcfTentouEnviar(true);
+    if (thesis !== 'VALOR_PRESENTE' && thesis !== 'FLUXO_COMPLETO') setAmortTentouEnviar(true);
     const validationError = validate();
     if (validationError) { setError(validationError); return; }
 
@@ -607,10 +613,11 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
                         onChange={setDcfRows}
                         erroLinha={erroLinhaVisivel}
                         onBlurLinha={i => setDcfTocados(t => (t[i] ? t : { ...t, [i]: true }))}
+                        modelo={MODELO_VALOR_PRESENTE}
                       />
                       {fluxosDcf().length > 0 && (
                         <div className="text-xs text-muted-foreground">
-                          Total nominal: R$ {fluxosDcf().reduce((s, f) => s + f.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          Total nominal: {formatCurrency(fluxosDcf().reduce((s, f) => s + f.amount, 0))}
                         </div>
                       )}
                     </div>
@@ -1055,23 +1062,19 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
                   <AccordionTrigger
                     id="avancado"
                     icon={<Sliders className="h-3.5 w-3.5" />}
-                    subtitle={amortizations.length > 0 ? `${amortizations.length} cadastrada${amortizations.length > 1 ? 's' : ''}` : ''}
+                    subtitle={lancamentosAmort.length > 0 ? `${lancamentosAmort.length} lançamento${lancamentosAmort.length > 1 ? 's' : ''}` : ''}
                   >
-                    Amortizações
+                    Amortizações e aportes
                   </AccordionTrigger>
                 </div>
-                <AccordionContent id="avancado" className="px-3 pb-3">
-                  <div className="flex items-center justify-between pt-1">
-                    <div>
-                      {amortizations.length > 0 && (
-                        <Badge variant="secondary">{amortizations.length}</Badge>
-                      )}
-                    </div>
-                    <Button variant="outline" size="sm" onClick={() => setShowAmortModal(true)} className="gap-2 px-4">
-                      <Plus className="h-4 w-4" />
-                      Cadastrar
-                    </Button>
-                  </div>
+                <AccordionContent id="avancado" className="px-3 pb-3 pt-1">
+                  <FlowsEditor
+                    rows={amortRows}
+                    onChange={setAmortRows}
+                    erroLinha={erroLinhaAmortVisivel}
+                    onBlurLinha={i => setAmortTocados(t => (t[i] ? t : { ...t, [i]: true }))}
+                    modelo={MODELO_AMORTIZACOES}
+                  />
                 </AccordionContent>
               </AccordionItem>
             )}
@@ -1112,12 +1115,6 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
         </CardContent>
       </Card>
 
-      <AmortizationModal
-        open={showAmortModal}
-        onOpenChange={setShowAmortModal}
-        amortizations={amortizations}
-        onChange={setAmortizations}
-      />
 
       <FuturePremisesModal
         open={premisesModal.open}

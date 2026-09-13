@@ -101,6 +101,12 @@ fator_pro_rata = (1 + indice_mensal/100) ^ (dias_utilizados / dias_do_mes)
 - Perpetuidade (Gordon) na data N do último fluxo: `VT_N = FC_base × (1 + g_p) / (r_p − g_p)`, taxas equivalentes ao período (`(1 + a.a.)^(1/k) − 1`); exige r > g; FC_base padrão = soma dos fluxos da data N
 - TIR/VPL saiu do menu da Tesouraria (rota `/api/tesouraria/calc/tir-vpl` segue ativa)
 
+### Cadastro de fluxos de caixa (todas as telas)
+- Um único editor: `web/src/components/ui/flows-editor.tsx` (linhas Data | Valor ± [| R$ ou %]) + regras em `web/src/lib/planilhaFluxos.ts`
+- Telas: Valor Presente (`MODELO_VALOR_PRESENTE`) e Amortizações e aportes (`MODELO_AMORTIZACOES`: negativo = amortização, positivo = aporte; % = percentual do saldo)
+- Planilha padrão: aba "Fluxos" com cabeçalho exato na linha 1; arquivo fora do modelo é recusado; qualquer linha com erro → nada é importado; limite de 2.000 fluxos
+- "Gerar periódicos" cria as linhas com datas ancoradas no dia inicial (mesma regra do motor); testes em `web/tests/planilhaFluxos.test.ts`
+
 ### Fluxo Completo (T4 — SAC/Price/Bullet)
 - Parcelas mensais, trimestrais, semestrais ou anuais (`installmentPeriodicity`): taxa do período = `(1 + a.a.)^(meses/12) − 1`; carência em múltiplos do período (senão 400)
 - Datas ancoradas no dia do início com ajuste ao fim do mês (31/01 → 28/02 → 31/03)

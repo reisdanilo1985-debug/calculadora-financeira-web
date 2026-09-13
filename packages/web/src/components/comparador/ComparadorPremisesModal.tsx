@@ -27,29 +27,34 @@ interface ScenarioPremisesSectionProps {
 function ScenarioPremisesSection({ info, calcEndDate, onUpdate }: ScenarioPremisesSectionProps) {
   const isMonthly = ['IPCA', 'IGPM', 'INCC'].includes(info.indexType);
   const isSOFR = info.indexType === 'SOFR';
-  const rateLabel = isMonthly ? 'Taxa Mensal (% a.m.)' : isSOFR ? 'Taxa Diária SOFR (% a.d.)' : 'Taxa Anual (% a.a.)';
+  // O motor da SOFR usa taxa anual ACT/360 (não diária)
+  const rateLabel = isMonthly ? 'Taxa Mensal (% a.m.)' : isSOFR ? 'Taxa SOFR ACT/360 (% a.a.)' : 'Taxa Anual (% a.a.)';
   const ratePlaceholder = isMonthly ? 'ex: 0.45' : isSOFR ? 'ex: 5.30' : 'ex: 10.5';
-  const rateUnit = isMonthly ? '% a.m.' : isSOFR ? '% a.d.' : '% a.a.';
+  const rateUnit = isMonthly ? '% a.m.' : '% a.a.';
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{ startDate: string; endDate: string; rate: number | null }>({
     startDate: info.premisesRequiredFrom.slice(0, 10),
     endDate: calcEndDate,
-    rate: 0,
+    rate: null,
   });
 
+  // Índices podem ter variação zero ou negativa (ex.: IPCA/IGP-M em deflação):
+  // replicar e adicionar valem para qualquer taxa finita, em todos os indexadores.
+  const canReplicate = info.lastAvailableRate != null && Number.isFinite(info.lastAvailableRate);
+
   const add = () => {
-    if (!form.startDate || !form.endDate || form.rate <= 0) return;
-    onUpdate([...info.premises, { ...form, id: crypto.randomUUID() }]);
-    setForm(f => ({ ...f, startDate: form.endDate, rate: 0 }));
+    if (!form.startDate || !form.endDate || form.rate === null || !Number.isFinite(form.rate)) return;
+    onUpdate([...info.premises, { startDate: form.startDate, endDate: form.endDate, rate: form.rate, id: crypto.randomUUID() }]);
+    setForm(f => ({ ...f, startDate: form.endDate, rate: null }));
   };
 
   const replicate = () => {
-    if (!info.lastAvailableRate) return;
+    if (!canReplicate) return;
     onUpdate([{
       id: crypto.randomUUID(),
       startDate: info.premisesRequiredFrom.slice(0, 10),
       endDate: calcEndDate,
-      rate: info.lastAvailableRate,
+      rate: info.lastAvailableRate!,
     }]);
   };
 
@@ -57,7 +62,7 @@ function ScenarioPremisesSection({ info, calcEndDate, onUpdate }: ScenarioPremis
 
   return (
     <div className="space-y-3">
-      {info.lastAvailableRate != null && info.lastAvailableRate > 0 && (
+      {canReplicate && (
         <button
           type="button"
           onClick={replicate}
@@ -104,9 +109,11 @@ function ScenarioPremisesSection({ info, calcEndDate, onUpdate }: ScenarioPremis
               type="number"
               className="h-8 text-xs"
               step={0.01}
-              min={0}
-              value={form.rate || ''}
-              onChange={e => setForm(f => ({ ...f, rate: parseFloat(e.target.value) || 0 }))}
+              value={form.rate ?? ''}
+              onChange={e => {
+                const v = parseFloat(e.target.value);
+                setForm(f => ({ ...f, rate: Number.isFinite(v) ? v : null }));
+              }}
               placeholder={ratePlaceholder}
             />
           </div>
@@ -125,7 +132,7 @@ function ScenarioPremisesSection({ info, calcEndDate, onUpdate }: ScenarioPremis
                 {formatDate(new Date(p.startDate))} → {formatDate(new Date(p.endDate))}
               </span>
               <span className="font-semibold text-projected">
-                {p.rate}%{isMonthly ? ' a.m.' : isSOFR ? ' a.d.' : ' a.a.'}
+                {p.rate}%{isMonthly ? ' a.m.' : ' a.a.'}
               </span>
               <Button
                 variant="ghost"
@@ -206,7 +213,7 @@ export function ComparadorPremisesModal({
         {scenarios[activeIdx] && (
           <div>
             <p className="text-xs text-muted-foreground mb-3">
-              Dados oficiais disponíveis até{' '}
+              Faltam dados oficiais a partir de{' '}
               <strong className="text-foreground">
                 {formatDate(new Date(scenarios[activeIdx].premisesRequiredFrom))}
               </strong>.
