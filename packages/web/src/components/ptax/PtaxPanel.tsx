@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { getPtaxSummary, PtaxSummaryData } from '@/lib/api';
+import { hojeISO, somarDiasISO } from '@/lib/datas';
 import {
   LineChart,
   Line,
@@ -35,6 +36,37 @@ const COLORS: Record<string, string> = {
   UYU: '#3b82f6', 
   PYG: '#ef4444', 
 };
+
+/**
+ * Data civil 'AAAA-MM-DD' de Brasília (fuso em que a PTAX é publicada), sem
+ * depender do fuso do navegador nem do servidor:
+ *   - "AAAA-MM-DD" ou dataHoraCotacao da Olinda ("AAAA-MM-DD HH:mm:ss.SSS",
+ *     já em horário de Brasília) → os 10 primeiros caracteres;
+ *   - instante ISO com fuso ("…Z") → convertido para America/Sao_Paulo.
+ */
+function isoBrasilia(valor: string): string {
+  if (/^\d{4}-\d{2}-\d{2}(?:$| )/.test(valor)) return valor.slice(0, 10);
+  const d = new Date(valor);
+  if (isNaN(d.getTime())) return String(valor).slice(0, 10);
+  const partes = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(d);
+  const parte = (tipo: string) => partes.find(p => p.type === tipo)?.value ?? '';
+  return `${parte('year')}-${parte('month')}-${parte('day')}`;
+}
+
+/** 'DD/MM/AAAA' da data civil de Brasília */
+function dataBR(valor: string): string {
+  return isoBrasilia(valor).split('-').reverse().join('/');
+}
+
+/** Data civil de uma cotação: dataHoraCotacao publicada pela Olinda (fallback: instante) */
+function diaCotacao(q: { date: string; timestamp?: string }): string {
+  return q.timestamp ? isoBrasilia(q.timestamp) : isoBrasilia(q.date);
+}
 
 const BULLETIN_HELP = [
   {
@@ -118,8 +150,9 @@ function BulletinHelpModal({ onClose }: { onClose: () => void }) {
 }
 
 export function PtaxPanel() {
-  const [startDate, setStartDate] = useState(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
-  const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
+  // Datas civis do relógio do usuário (toISOString() já é "amanhã" após 21h no Brasil)
+  const [startDate, setStartDate] = useState(() => somarDiasISO(hojeISO(), -30));
+  const [endDate, setEndDate] = useState(() => hojeISO());
   const [currency, setCurrency] = useState('USD');
   const [bulletin, setBulletin] = useState('Fechamento');
   const [showHelp, setShowHelp] = useState(false);
@@ -130,14 +163,20 @@ export function PtaxPanel() {
   const [conversionAmount, setConversionAmount] = useState<string>('');
 
   const handleFetch = async () => {
-    if (startDate >= endDate) {
-      setError('Data inicial deve ser anterior à final.');
+    if (!startDate || !endDate) {
+      setError('Informe as datas inicial e final.');
       return;
     }
-    
+    // Datas 'AAAA-MM-DD' comparam como texto; um único dia (início = fim) é permitido.
+    if (startDate > endDate) {
+      setError('Data inicial não pode ser posterior à final.');
+      return;
+    }
+
     setError('');
     setLoading(true);
     try {
+      // Enviadas como data civil 'AAAA-MM-DD' (sem hora nem fuso).
       const data = await getPtaxSummary(currency, startDate, endDate, bulletin);
       setSummary(data);
     } catch (err: any) {
@@ -150,8 +189,7 @@ export function PtaxPanel() {
   const handleDownloadAccountingCSV = () => {
     if (!summary) return;
     const fmt = (n: number) => n.toFixed(4).replace('.', ',');
-    const dateBR = (iso: string) => new Date(iso).toISOString().slice(0, 10).split('-').reverse().join('/');
-    const periodLabel = `${dateBR(summary.periodStart)} a ${dateBR(summary.periodEnd)}`;
+    const periodLabel = `${dataBR(summary.periodStart)} a ${dataBR(summary.periodEnd)}`;
     const rows = [
       ['Conversão de Demonstrações Contábeis - PTAX BCB'],
       [`Moeda: ${summary.currency}/BRL`],
@@ -169,7 +207,7 @@ export function PtaxPanel() {
       [
         'Contas Patrimoniais (BP)',
         'PTAX de Fechamento do Período',
-        dateBR(summary.lastQuoteDate),
+        dataBR(summary.lastQuoteDate),
         fmt(summary.lastQuoteBuy),
         fmt(summary.lastQuoteSell),
       ],
@@ -181,7 +219,7 @@ export function PtaxPanel() {
     link.href = url;
     link.setAttribute(
       'download',
-      `conversao_contabil_${summary.currency}_${summary.periodStart.slice(0, 10)}_a_${summary.periodEnd.slice(0, 10)}.csv`
+      `conversao_contabil_${summary.currency}_${isoBrasilia(summary.periodStart)}_a_${isoBrasilia(summary.periodEnd)}.csv`
     );
     document.body.appendChild(link);
     link.click();
@@ -198,7 +236,7 @@ export function PtaxPanel() {
       headers.join(';'),
       ...summary.quotes.map(q => {
         const row = [
-          new Date(q.date).toISOString().slice(0, 10).split('-').reverse().join('/'),
+          diaCotacao(q).split('-').reverse().join('/'),
           q.bulletinType,
           q.buyRate.toString().replace('.', ','),
           q.sellRate.toString().replace('.', ','),
@@ -221,7 +259,7 @@ export function PtaxPanel() {
   const chartData = useMemo(() => {
     if (!summary) return [];
     return summary.quotes.map(q => ({
-      date: new Date(q.date).toISOString().slice(0, 10).split('-').reverse().slice(0, 2).join('/'),
+      date: diaCotacao(q).split('-').reverse().slice(0, 2).join('/'),
       fullDate: q.date,
       compra: q.buyRate,
       venda: q.sellRate
@@ -393,7 +431,7 @@ export function PtaxPanel() {
                       </div>
                     </div>
                     <p className="text-[10px] text-muted-foreground/70 pt-1 border-t border-emerald-500/10">
-                      Última cotação disponível: {new Date(summary.lastQuoteDate).toISOString().slice(0, 10).split('-').reverse().join('/')}.
+                      Última cotação disponível: {dataBR(summary.lastQuoteDate)}.
                     </p>
                   </div>
                 </div>
@@ -447,7 +485,7 @@ export function PtaxPanel() {
                 </CardHeader>
                 <CardContent className="py-3">
                   <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground">{new Date(summary.lastQuoteDate).toISOString().slice(0, 10).split('-').reverse().join('/')}</p>
+                    <p className="text-xs text-muted-foreground">{dataBR(summary.lastQuoteDate)}</p>
                     <div className="flex justify-between items-baseline pt-1">
                       <span className="text-xs text-muted-foreground">Compra:</span>
                       <span className="font-mono text-base font-medium">R$ {summary.lastQuoteBuy.toFixed(4)}</span>
@@ -484,11 +522,11 @@ export function PtaxPanel() {
                 </CardHeader>
                 <CardContent className="py-3">
                   <div className="space-y-1 pt-4">
-                    <div className="flex justify-between items-baseline pt-1 group" title={new Date(summary.minSellDate).toISOString().slice(0,10)}>
+                    <div className="flex justify-between items-baseline pt-1 group" title={dataBR(summary.minSellDate)}>
                       <span className="text-xs text-muted-foreground">Mínima (V):</span>
                       <span className="font-mono text-sm">R$ {summary.minSellRate.toFixed(4)}</span>
                     </div>
-                    <div className="flex justify-between items-baseline group" title={new Date(summary.maxSellDate).toISOString().slice(0,10)}>
+                    <div className="flex justify-between items-baseline group" title={dataBR(summary.maxSellDate)}>
                       <span className="text-xs text-muted-foreground">Máxima (V):</span>
                       <span className="font-mono text-sm text-rose-500">R$ {summary.maxSellRate.toFixed(4)}</span>
                     </div>

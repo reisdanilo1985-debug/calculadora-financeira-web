@@ -13,8 +13,12 @@ import {
   GracePeriodType,
   InterestType,
   Currency,
+  DCFPerpetuityConfig,
+  PeriodicityType,
+  MissingIndexDataError,
   calculate,
   getPremisesRequiredFrom,
+  parseDataCivil,
 } from '@correcao/core';
 import { getIndexDataWithCache } from '../services/BCBService';
 import { getSOFRWithCache } from '../services/FREDService';
@@ -30,12 +34,13 @@ export const calculateRouter = Router();
  */
 const amortizationSchema = z.object({
   date: z.string(),
-  type: z.string(),
+  type: z.enum(['FIXED', 'PERCENTAGE', 'PERIODIC']),
   value: z.number(),
-  periodicity: z.string().optional(),
+  // Enum fechado: periodicidade desconhecida travava a expansão do cronograma (E09)
+  periodicity: z.enum(['MONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'ANNUAL']).optional(),
   periodicEndDate: z.string().optional(),
   isPeriodicPercentage: z.boolean().optional(),
-  direction: z.string().optional(),
+  direction: z.enum(['OUT', 'IN']).optional(),
 });
 
 const calculateBodySchema = z.object({
@@ -51,7 +56,7 @@ const calculateBodySchema = z.object({
     .object({
       mode: z.enum(['percentage', 'additive']),
       value: z.number(),
-      additiveBase: z.string().optional(),
+      additiveBase: z.union([z.string(), z.number()]).optional(),
     })
     .optional(),
   amortizations: z.array(amortizationSchema).optional(),
@@ -62,9 +67,17 @@ const calculateBodySchema = z.object({
     .optional(),
   discountRate: z.number().optional(),
   referenceDate: z.string().optional(),
+  perpetuity: z
+    .object({
+      growthRate: z.number(),
+      periodicity: z.enum(['MONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'ANNUAL']),
+      baseCashFlow: z.number().optional(),
+    })
+    .optional(),
   amortizationSystem: z.string().optional(),
   remunerationRate: z.number().optional(),
   numberOfPeriods: z.number().optional(),
+  installmentPeriodicity: z.enum(['MONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'ANNUAL']).optional(),
   interestType: z.string().optional(),
   interestRate: z.number().optional(),
 });
@@ -115,27 +128,87 @@ interface CalculateRequest {
   }[];
   discountRate?: number;
   referenceDate?: string;
+  perpetuity?: DCFPerpetuityConfig;
   // T4 – Fluxo Completo
   amortizationSystem?: AmortizationSystem;
   remunerationRate?: number;
   numberOfPeriods?: number;
+  installmentPeriodicity?: PeriodicityType;
   // T5 – Correção com Juros
   interestType?: InterestType;
   interestRate?: number;
 }
 
-async function fetchIndexData(
+/** Data informada no payload que não pôde ser lida como data civil */
+export class DataInvalidaError extends Error {
+  constructor(campo: string, valor: unknown) {
+    super(`Data inválida em ${campo}: "${String(valor)}". Use AAAA-MM-DD.`);
+    this.name = 'DataInvalidaError';
+  }
+}
+
+/**
+ * Lê a data do payload como DATA CIVIL (meia-noite local), igual em qualquer
+ * fuso de servidor: vale a data escrita ('2025-01-03', '2025-01-03T12:00:00',
+ * '2025-01-03T00:00:00Z' → 03/01/2025). `new Date(str)` lia 'AAAA-MM-DD' como
+ * UTC e, num servidor em São Paulo, recuava um dia.
+ */
+export function dataCivil(valor: unknown, campo: string): Date {
+  const d = typeof valor === 'string' ? parseDataCivil(valor, null) : null;
+  if (!d) throw new DataInvalidaError(campo, valor);
+  return d;
+}
+
+const MONTHLY_INDEXES = new Set<string>([IndexType.IPCA, IndexType.IGPM, IndexType.INCC]);
+
+/**
+ * Busca os dados do índice para o período. Além do intervalo pedido:
+ * - SOFR: inclui a semana anterior, para que um início em dia sem publicação
+ *   use a última taxa publicada antes dele;
+ * - índices mensais: começa no dia 1 do mês inicial, onde o BCB data a
+ *   variação do mês (um início no dia 15 excluiria a variação daquele mês).
+ */
+export async function fetchIndexData(
   indexType: IndexType,
   startDate: Date,
   endDate: Date
 ): Promise<{ data: any[]; warning?: string }> {
   if (indexType === IndexType.SOFR) {
-    return getSOFRWithCache(startDate, endDate);
+    const from = new Date(startDate);
+    from.setDate(from.getDate() - 7);
+    return getSOFRWithCache(from, endDate);
   }
   if (indexType === IndexType.PREFIXADA) {
     return { data: [], fromCache: false } as any;
   }
+  if (MONTHLY_INDEXES.has(indexType)) {
+    return getIndexDataWithCache(indexType, new Date(startDate.getFullYear(), startDate.getMonth(), 1), endDate);
+  }
   return getIndexDataWithCache(indexType, startDate, endDate);
+}
+
+/** Normaliza a base do spread aditivo (a UI e o Excel podem mandar número ou texto) */
+export function normalizeSpread<T extends { mode: 'percentage' | 'additive'; value: number; additiveBase?: any }>(
+  spread: T | undefined
+): T | undefined {
+  if (!spread) return spread;
+  const base = spread.additiveBase;
+  return base === undefined || base === null || base === ''
+    ? { ...spread, additiveBase: undefined }
+    : { ...spread, additiveBase: Number(base) as DayCountBasis };
+}
+
+/** Corpo 422 para período com dias/meses sem dado oficial nem premissa */
+export function missingDataResponse(error: MissingIndexDataError, endDate: Date, indexData: any[], indexType?: string) {
+  const requiredFrom = getPremisesRequiredFrom(endDate, indexData, indexType);
+  return {
+    error: error.message,
+    // Só reabre o diálogo de premissas quando a lacuna é no futuro (após o último dado)
+    premisesRequiredFrom: requiredFrom ? requiredFrom.toISOString() : undefined,
+    lastAvailableRate: indexData[indexData.length - 1]?.value ?? null,
+    lastAvailableDate: indexData[indexData.length - 1]?.date?.toISOString() ?? null,
+    missingRanges: error.intervalos.map(i => ({ start: i.inicio.toISOString(), end: i.fim.toISOString() })),
+  };
 }
 
 calculateRouter.post('/', async (req: Request, res: Response) => {
@@ -156,16 +229,10 @@ calculateRouter.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'startDate e endDate são obrigatórios' });
     }
 
-    const startDate = new Date(body.startDate);
+    const startDate = dataCivil(body.startDate, 'startDate');
     // endDate é opcional para VALOR_PRESENTE/FLUXO_COMPLETO (needsEndDate=false) — nesse
     // caso, sem endDate informado, usa startDate como placeholder em vez de Invalid Date.
-    const endDate = body.endDate ? new Date(body.endDate) : new Date(startDate);
-    startDate.setHours(0, 0, 0, 0);
-    endDate.setHours(0, 0, 0, 0);
-
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      return res.status(400).json({ error: 'Datas inválidas.' });
-    }
+    const endDate = body.endDate ? dataCivil(body.endDate, 'endDate') : new Date(startDate);
 
     // T2 – Valor Presente: não precisa de dados de índice
     if (thesis === ThesisType.VALOR_PRESENTE) {
@@ -185,16 +252,23 @@ calculateRouter.post('/', async (req: Request, res: Response) => {
         thesisType: ThesisType.VALOR_PRESENTE,
         cashFlows: body.cashFlows.map(f => ({
           id: f.id,
-          date: new Date(f.date),
+          date: dataCivil(f.date, 'cashFlows.date'),
           amount: f.amount,
           label: f.label,
         })),
         discountRate: body.discountRate,
-        referenceDate: body.referenceDate ? new Date(body.referenceDate) : startDate,
+        referenceDate: body.referenceDate ? dataCivil(body.referenceDate, 'referenceDate') : startDate,
+        perpetuity: body.perpetuity,
         currency: body.currency ?? Currency.BRL,
       };
 
-      const result = calculate(input);
+      let result;
+      try {
+        result = calculate(input);
+      } catch (error: any) {
+        // Regras de entrada do DCF (fluxo antes da referência, taxa ≤ crescimento…) são erro do pedido
+        return res.status(400).json({ error: error.message || 'Parâmetros inválidos para Valor Presente.' });
+      }
       return res.json(serializeResult(result));
     }
 
@@ -223,13 +297,20 @@ calculateRouter.post('/', async (req: Request, res: Response) => {
         amortizationSystem: body.amortizationSystem,
         remunerationRate: body.remunerationRate,
         numberOfPeriods: body.numberOfPeriods,
+        installmentPeriodicity: body.installmentPeriodicity,
         currency: body.currency ?? Currency.BRL,
         gracePeriod: body.gracePeriod
-          ? { type: body.gracePeriod.type, endDate: new Date(body.gracePeriod.endDate) }
+          ? { type: body.gracePeriod.type, endDate: dataCivil(body.gracePeriod.endDate, 'gracePeriod.endDate') }
           : undefined,
       };
 
-      const result = calculate(input);
+      let result;
+      try {
+        result = calculate(input);
+      } catch (error: any) {
+        // Regras de entrada do cronograma (carência ≥ prazo, carência fora da periodicidade…) são erro do pedido
+        return res.status(400).json({ error: error.message || 'Parâmetros inválidos para Fluxo Completo.' });
+      }
       return res.json(serializeResult(result));
     }
 
@@ -247,7 +328,7 @@ calculateRouter.post('/', async (req: Request, res: Response) => {
       indexData = result.data;
       warning = result.warning;
 
-      const premisesRequiredFrom = getPremisesRequiredFrom(endDate, indexData);
+      const premisesRequiredFrom = getPremisesRequiredFrom(endDate, indexData, body.indexType);
 
       if (premisesRequiredFrom && (!body.futurePremises || body.futurePremises.length === 0)) {
         return res.status(422).json({
@@ -267,26 +348,26 @@ calculateRouter.post('/', async (req: Request, res: Response) => {
       indexType: body.indexType,
       dayCountBasis: body.dayCountBasis ?? DayCountBasis.DC365,
       prefixedRate: body.prefixedRate,
-      spread: body.spread,
+      spread: normalizeSpread(body.spread),
       indexData,
       thesisType: thesis,
       currency: body.currency ?? Currency.BRL,
       amortizations: body.amortizations?.map(a => ({
-        date: new Date(a.date),
+        date: dataCivil(a.date, 'amortizations.date'),
         type: a.type as any,
         value: a.value,
         periodicity: a.periodicity as any,
-        periodicEndDate: a.periodicEndDate ? new Date(a.periodicEndDate) : undefined,
+        periodicEndDate: a.periodicEndDate ? dataCivil(a.periodicEndDate, 'amortizations.periodicEndDate') : undefined,
         isPeriodicPercentage: a.isPeriodicPercentage,
         direction: a.direction as any,
       })),
       futurePremises: body.futurePremises?.map(p => ({
-        startDate: new Date(p.startDate),
-        endDate: new Date(p.endDate),
+        startDate: dataCivil(p.startDate, 'futurePremises.startDate'),
+        endDate: dataCivil(p.endDate, 'futurePremises.endDate'),
         rate: p.rate,
       })),
       gracePeriod: body.gracePeriod
-        ? { type: body.gracePeriod.type, endDate: new Date(body.gracePeriod.endDate) }
+        ? { type: body.gracePeriod.type, endDate: dataCivil(body.gracePeriod.endDate, 'gracePeriod.endDate') }
         : undefined,
       interestType: body.interestType,
       interestRate: body.interestRate,
@@ -297,9 +378,19 @@ calculateRouter.post('/', async (req: Request, res: Response) => {
       endDate: endDate.toISOString().slice(0, 10),
     });
 
-    const result = calculate(input);
-    return res.json({ ...serializeResult(result), warning });
+    try {
+      const result = calculate(input);
+      return res.json({ ...serializeResult(result), warning });
+    } catch (error: any) {
+      if (error instanceof MissingIndexDataError || error?.name === 'MissingIndexDataError') {
+        return res.status(422).json(missingDataResponse(error, endDate, indexData, body.indexType));
+      }
+      throw error;
+    }
   } catch (error: any) {
+    if (error instanceof DataInvalidaError) {
+      return res.status(400).json({ error: error.message });
+    }
     logger.error('Erro no cálculo:', error);
     return res.status(500).json({ error: error.message || 'Erro interno no cálculo.' });
   }
@@ -330,6 +421,14 @@ function serializeResult(result: any) {
         ...f,
         date: f.date instanceof Date ? f.date.toISOString() : f.date,
       })),
+      terminalValue: result.dcfResult.terminalValue
+        ? {
+            ...result.dcfResult.terminalValue,
+            date: result.dcfResult.terminalValue.date instanceof Date
+              ? result.dcfResult.terminalValue.date.toISOString()
+              : result.dcfResult.terminalValue.date,
+          }
+        : undefined,
     };
   }
 
@@ -374,7 +473,7 @@ calculateRouter.get('/premissas-necessarias', async (req: Request, res: Response
       end
     );
 
-    const requiredFrom = getPremisesRequiredFrom(end, indexData);
+    const requiredFrom = getPremisesRequiredFrom(end, indexData, indexType as string);
 
     return res.json({
       needsPremises: !!requiredFrom,

@@ -20,14 +20,19 @@
  *   E   = Equity / Market Cap (valor de mercado)
  *   V   = D + E (valor total da firma)
  *   Kd  = Custo da dívida pré-imposto
+ *
+ * Moeda e regime: Rf, ERP, CRP e Kd devem estar na MESMA moeda e no MESMO regime (nominal/real).
+ * Para levar uma taxa de uma moeda a outra use `ajustarTaxaPorDiferencialInflacao` (Fisher).
  */
+export type MoedaWacc = 'BRL' | 'USD' | 'EUR';
+export type RegimeTaxa = 'nominal' | 'real';
 export interface WaccInput {
     /** Setor de atuação da empresa */
     setor: string;
     /** País (para sugerir CRP) */
     pais: string;
     /** Moeda do cálculo */
-    moeda: 'BRL' | 'USD' | 'EUR';
+    moeda: MoedaWacc;
     /** Taxa Livre de Risco — Rf (% a.a.) */
     taxaLivreDeRisco: number;
     /** Prêmio pelo Risco de Mercado — ERP (% a.a.) */
@@ -55,7 +60,27 @@ export interface WaccResult {
     custoEquity: number;
     custoDividaAfterTax: number;
     wacc: number;
+    sensibilidade: WaccSensibilidadeItem[];
     memorial: WaccMemorialStep[];
+}
+export type WaccPremissaSensibilidade = 'rf' | 'erp' | 'beta' | 'kd' | 'ir' | 'de';
+export interface WaccSensibilidadeItem {
+    id: WaccPremissaSensibilidade;
+    /** Premissa chocada (ex.: "Taxa livre de risco (Rf)") */
+    premissa: string;
+    /** Choque aplicado (ex.: "+1 p.p.", "+10%") */
+    choque: string;
+    /** WACC recalculado com o choque (% a.a.); null se o cenário base não for finito */
+    waccChocado: number | null;
+    /** WACC_chocado − WACC_base, em pontos percentuais; null se não for finito */
+    deltaWaccPP: number | null;
+    /** Decomposição do efeito (só no choque de IR: via Kd após IR e via realavancagem do β), em p.p. */
+    decomposicao?: {
+        viaCustoDivida: number;
+        viaBeta: number;
+    };
+    /** Convenção do choque */
+    descricao: string;
 }
 export interface WaccMemorialStep {
     titulo: string;
@@ -65,6 +90,24 @@ export interface WaccMemorialStep {
     unidade: string;
     descricao: string;
 }
+/**
+ * Converte uma taxa de uma moeda/regime para outra pelo diferencial de inflação (paridade de Fisher):
+ *   (1 + taxa_destino) = (1 + taxa_origem) × (1 + π_destino) / (1 + π_origem)
+ * Todas as taxas em % a.a. Ex.: Rf USD 3,95% com π USD 2% e π BRL 3% → Rf BRL 4,9691%.
+ * Com π_destino = 0 obtém-se a taxa real da moeda de origem.
+ */
+export declare function ajustarTaxaPorDiferencialInflacao(taxaPct: number, inflacaoOrigemPct: number, inflacaoDestinoPct: number): number;
+/** Taxa real (% a.a.) a partir da nominal e da inflação da mesma moeda: (1 + n)/(1 + π) − 1. */
+export declare function taxaRealDeNominal(taxaNominalPct: number, inflacaoPct: number): number;
+/**
+ * Sensibilidade do WACC a choques isolados (demais premissas constantes), recalculada pelo motor:
+ *   - Rf, ERP, Kd antes do IR e IR: +1 p.p.;
+ *   - β: +10% (equivale a +10% no β alavancado, pois Hamada é linear em β desalavancado);
+ *   - IR +1 p.p. inclui a realavancagem do β (decomposto em efeito via Kd e via β);
+ *   - D/E: +10% (relativo), mantendo V = E + D constante e Kd inalterado.
+ * Resultados em pontos percentuais do WACC.
+ */
+export declare function calcularSensibilidadeWACC(input: WaccInput): WaccSensibilidadeItem[];
 /**
  * Calcula o WACC seguindo a metodologia Damodaran.
  * Função pura — sem I/O, ideal para testes unitários.

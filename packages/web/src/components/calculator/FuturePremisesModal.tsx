@@ -33,24 +33,26 @@ export function FuturePremisesModal({
   indexType, premises, onChange, onConfirm,
   lastAvailableRate, lastAvailableDate,
 }: FuturePremisesModalProps) {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{ startDate: string; endDate: string; rate: number | null }>({
     startDate: premisesRequiredFrom.slice(0, 10),
     endDate: calcEndDate,
-    rate: 0,
+    rate: null,
   });
 
   const isMonthly = ['IPCA', 'IGPM', 'INCC'].includes(indexType);
   const isSOFR = indexType === 'SOFR';
-  const rateLabel = isMonthly ? 'Taxa Mensal (% a.m.)' : isSOFR ? 'Taxa Diária SOFR (% a.d.)' : 'Taxa Anual (% a.a.)';
+  // O motor da SOFR usa taxa anual ACT/360 (não diária)
+  const rateLabel = isMonthly ? 'Taxa Mensal (% a.m.)' : isSOFR ? 'Taxa SOFR ACT/360 (% a.a.)' : 'Taxa Anual (% a.a.)';
   const ratePlaceholder = isMonthly ? 'ex: 0.45' : isSOFR ? 'ex: 5.30' : 'ex: 10.5';
-  const rateUnit = isMonthly ? '% a.m.' : isSOFR ? '% a.d.' : '% a.a.';
+  const rateUnit = isMonthly ? '% a.m.' : '% a.a.';
 
-  const canReplicate = lastAvailableRate != null && lastAvailableRate > 0;
+  // Índices podem ter variação zero ou negativa (ex.: IPCA em deflação)
+  const canReplicate = lastAvailableRate != null && Number.isFinite(lastAvailableRate);
 
   const add = () => {
-    if (!form.startDate || !form.endDate || form.rate <= 0) return;
-    onChange([...premises, { ...form, id: crypto.randomUUID() }]);
-    setForm(f => ({ ...f, startDate: form.endDate, rate: 0 }));
+    if (!form.startDate || !form.endDate || form.rate === null || !Number.isFinite(form.rate)) return;
+    onChange([...premises, { startDate: form.startDate, endDate: form.endDate, rate: form.rate, id: crypto.randomUUID() }]);
+    setForm(f => ({ ...f, startDate: form.endDate, rate: null }));
   };
 
   const replicate = () => {
@@ -76,7 +78,7 @@ export function FuturePremisesModal({
             Premissas Futuras Necessárias
           </DialogTitle>
           <DialogDescription>
-            Os dados oficiais estão disponíveis até{' '}
+            Faltam dados oficiais a partir de{' '}
             <strong>{formatDate(new Date(premisesRequiredFrom))}</strong>.
             Informe as premissas para completar o cálculo até{' '}
             <strong>{formatDate(new Date(calcEndDate))}</strong>.
@@ -132,9 +134,11 @@ export function FuturePremisesModal({
               <Input
                 type="number"
                 step={0.01}
-                min={0}
-                value={form.rate || ''}
-                onChange={e => setForm(f => ({ ...f, rate: parseFloat(e.target.value) || 0 }))}
+                value={form.rate ?? ''}
+                onChange={e => {
+                  const v = parseFloat(e.target.value);
+                  setForm(f => ({ ...f, rate: Number.isFinite(v) ? v : null }));
+                }}
                 placeholder={ratePlaceholder}
               />
             </div>

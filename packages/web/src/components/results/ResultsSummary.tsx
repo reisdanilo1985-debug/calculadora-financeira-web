@@ -54,27 +54,97 @@ function StatCard({
   );
 }
 
+const PERIODICITY_LABELS: Record<string, string> = {
+  ANNUAL: 'anual', SEMIANNUAL: 'semestral', QUARTERLY: 'trimestral', MONTHLY: 'mensal',
+};
+
+
+const fmtTaxa = (v: number, casas = 4) => v.toLocaleString('pt-BR', { maximumFractionDigits: casas });
+
 function DCFSummary({ result }: { result: CalculationResult }) {
   const dcf = result.dcfResult!;
+  const tv = dcf.terminalValue;
+  const temSaida = dcf.flows.some(f => f.nominalAmount < 0);
+  const nFluxos = `${dcf.flows.length} fluxo${dcf.flows.length !== 1 ? 's' : ''}`;
+  const duration = dcf.macaulayDuration != null ? `${dcf.macaulayDuration.toFixed(2)} anos` : null;
+  const taxa = `${fmtTaxa(dcf.discountRate)}% a.a.`;
+  // VPL abaixo de meio centavo e TIR a menos de 0,000001 p.p. da taxa: empate
+  const vplZero = Math.abs(dcf.totalPV) < 0.005;
+  const tirVsTaxa = dcf.irr == null ? 0 : Math.abs(dcf.irr - dcf.discountRate) < 1e-6 ? 0 : Math.sign(dcf.irr - dcf.discountRate);
+  // Com saídas, a participação no VP (VPL) distorce: some da tabela
+  const contrib = (pct: number) => (temSaida ? '—' : `${pct.toFixed(1)}%`);
+
   return (
     <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard icon={DollarSign} label="Valor Nominal Total" value={formatCurrency(dcf.totalNominal)} size="small" />
-        <StatCard icon={TrendingUp} label="Valor Presente Total" value={formatCurrency(dcf.totalPV)} size="large" />
+        <StatCard icon={DollarSign} label="Valor Nominal Total" value={formatCurrency(dcf.totalNominal)} sub={nFluxos} size="small" />
         <StatCard
-          icon={Percent}
-          label="Desconto Total"
-          value={`-${((1 - dcf.totalPV / dcf.totalNominal) * 100).toFixed(2)}%`}
-          sub={`Taxa: ${dcf.discountRate}% a.a.`}
-          valueColor="text-orange-400"
+          icon={TrendingUp}
+          label={temSaida ? 'VPL' : 'Valor Presente Total'}
+          value={formatCurrency(dcf.totalPV)}
+          sub={tv ? `Fluxos ${formatCurrency(dcf.explicitPV)} + perpetuidade` : `Taxa: ${taxa}`}
+          size="large"
         />
-        <StatCard
-          icon={Clock}
-          label="Duration (Macaulay)"
-          value={`${dcf.macaulayDuration.toFixed(2)} anos`}
-          sub={`${dcf.flows.length} fluxo${dcf.flows.length !== 1 ? 's' : ''}`}
-        />
+        {dcf.irr != null ? (
+          <StatCard
+            icon={Percent}
+            label="TIR"
+            value={`${fmtTaxa(dcf.irr, 2)}% a.a.`}
+            sub={`${fmtTaxa(dcf.irrMonthly ?? 0, 4)}% a.m. · taxa ${taxa}`}
+            valueColor={tirVsTaxa > 0 ? 'text-emerald-400' : tirVsTaxa < 0 ? 'text-red-400' : undefined}
+          />
+        ) : temSaida ? (
+          <StatCard icon={Percent} label="TIR" value="—" sub="sem TIR na faixa pesquisada" />
+        ) : tv ? (
+          <StatCard icon={Clock} label="Duration (Macaulay)" value={duration ?? '—'} sub="inclui a perpetuidade" />
+        ) : (
+          <StatCard
+            icon={Percent}
+            label="Desconto Total"
+            value={`-${((1 - dcf.totalPV / dcf.totalNominal) * 100).toFixed(2)}%`}
+            sub={`Taxa: ${taxa}`}
+            valueColor="text-orange-400"
+          />
+        )}
+        {tv ? (
+          <StatCard
+            icon={TrendingUp}
+            label="Valor Terminal (VP)"
+            value={formatCurrency(tv.pv)}
+            sub={temSaida
+              ? `base ${formatCurrency(tv.baseCashFlow)} · g ${fmtTaxa(tv.growthRate)}% a.a.`
+              : `${tv.contributionPercent.toFixed(1)}% do VP · g ${fmtTaxa(tv.growthRate)}% a.a.`}
+          />
+        ) : (
+          <StatCard
+            icon={Clock}
+            label="Duration (Macaulay)"
+            value={duration ?? '—'}
+            sub={duration ? nFluxos : 'não definida com VP negativo'}
+          />
+        )}
       </div>
+
+      {(dcf.irrWarning || temSaida) && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 mt-3">
+          {temSaida && (
+            <span className={`text-xs ${vplZero ? 'text-muted-foreground' : dcf.totalPV > 0 ? 'text-emerald-400/80' : 'text-red-400/80'}`}>
+              {vplZero
+                ? `VPL zero a ${taxa}: o fluxo rende exatamente a taxa de desconto.`
+                : dcf.totalPV > 0
+                ? `VPL positivo a ${taxa}: o fluxo cria valor.`
+                : `VPL negativo a ${taxa}: o fluxo destrói valor.`}
+            </span>
+          )}
+          {dcf.irrWarning && (
+            <span className="flex items-center gap-1 text-xs text-projected/80">
+              <AlertTriangle className="h-3 w-3 shrink-0" />
+              {dcf.irrWarning}
+              {dcf.irrs && dcf.irrs.length > 1 && ` (${dcf.irrs.map(x => `${fmtTaxa(x, 2)}%`).join(' · ')})`}
+            </span>
+          )}
+        </div>
+      )}
       {/* DCF flows mini-table */}
       <div className="rounded-lg border border-white/5 overflow-hidden glass-panel mt-4">
         <table className="w-full text-xs">
@@ -94,15 +164,29 @@ function DCFSummary({ result }: { result: CalculationResult }) {
                 <td className="px-3 py-1.5 text-right font-mono">{formatCurrency(f.nominalAmount)}</td>
                 <td className="px-3 py-1.5 text-right font-mono text-muted-foreground">{f.discountFactor.toFixed(6)}</td>
                 <td className="px-3 py-1.5 text-right font-mono font-semibold text-primary">{formatCurrency(f.pv)}</td>
-                <td className="px-3 py-1.5 text-right font-mono text-muted-foreground">{f.contributionPercent.toFixed(1)}%</td>
+                <td className="px-3 py-1.5 text-right font-mono text-muted-foreground">{contrib(f.contributionPercent)}</td>
               </tr>
             ))}
+            {tv && (
+              <tr className="border-t border-white/5 hover:bg-white/5 transition-colors">
+                <td className="px-3 py-1.5">
+                  <span className="font-mono">{formatDate(new Date(tv.date))}</span>
+                  <span className="block text-[10px] text-muted-foreground">
+                    Perpetuidade {PERIODICITY_LABELS[tv.periodicity] ?? ''} · base {formatCurrency(tv.baseCashFlow)} · g {fmtTaxa(tv.growthRate)}% a.a.
+                  </span>
+                </td>
+                <td className="px-3 py-1.5 text-right font-mono">{formatCurrency(tv.nominalValue)}</td>
+                <td className="px-3 py-1.5 text-right font-mono text-muted-foreground">{tv.discountFactor.toFixed(6)}</td>
+                <td className="px-3 py-1.5 text-right font-mono font-semibold text-primary">{formatCurrency(tv.pv)}</td>
+                <td className="px-3 py-1.5 text-right font-mono text-muted-foreground">{contrib(tv.contributionPercent)}</td>
+              </tr>
+            )}
             <tr className="border-t-2 border-white/10 bg-white/5 font-semibold">
               <td className="px-3 py-2">Total</td>
               <td className="px-3 py-2 text-right font-mono">{formatCurrency(dcf.totalNominal)}</td>
               <td></td>
               <td className="px-3 py-2 text-right font-mono text-primary animate-pulse-glow rounded">{formatCurrency(dcf.totalPV)}</td>
-              <td className="px-3 py-2 text-right font-mono">100%</td>
+              <td className="px-3 py-2 text-right font-mono">{temSaida ? '—' : '100%'}</td>
             </tr>
           </tbody>
         </table>
@@ -111,26 +195,90 @@ function DCFSummary({ result }: { result: CalculationResult }) {
   );
 }
 
+const SYSTEM_NAMES: Record<string, string> = { SAC: 'SAC', PRICE: 'Price', BULLET: 'Bullet' };
+
+/** Leitura da comparação: o sistema escolhido frente aos outros dois (sem certo/errado) */
+function leituraComparacao(ff: NonNullable<CalculationResult['fullFlowResult']>): string | null {
+  const comp = ff.comparison;
+  const sac = comp?.find(c => c.system === 'SAC');
+  const price = comp?.find(c => c.system === 'PRICE');
+  if (!sac || !price) return null;
+  const jurosAMais = price.totalInterest - sac.totalInterest;
+  const alivio = sac.firstPayment - price.firstPayment;
+  return `Mesma taxa e prazo: Price paga ${formatCurrency(jurosAMais)} a mais de juros que SAC; em troca, a 1ª parcela é ${formatCurrency(alivio)} menor.`;
+}
+
 function FluxoCompletoSummary({ result }: { result: CalculationResult }) {
   const ff = result.fullFlowResult!;
+  const periodo = ff.periodicity && ff.periodicity !== 'MONTHLY'
+    ? ` · ${PERIODICITY_LABELS[ff.periodicity]} (${fmtTaxa(ff.periodRate ?? 0)}% ao período)`
+    : '';
+  const escolhido = ff.comparison?.find(c => c.system === ff.amortizationSystem);
+  const leitura = leituraComparacao(ff);
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <StatCard icon={DollarSign} label="Principal" value={formatCurrency(ff.principal)} size="small" />
-      <StatCard icon={TrendingUp} label="Total Pago" value={formatCurrency(ff.totalPayments)} size="large" />
-      <StatCard
-        icon={Percent}
-        label="Total Juros"
-        value={formatCurrency(ff.totalInterest)}
-        sub={`${ff.annualRate}% a.a. | ${ff.amortizationSystem}`}
-        valueColor="text-orange-400"
-      />
-      <StatCard
-        icon={Calendar}
-        label="Total Amortizado"
-        value={formatCurrency(ff.totalAmortized)}
-        sub={`${ff.rows.length} período${ff.rows.length !== 1 ? 's' : ''}`}
-      />
-    </div>
+    <>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard icon={DollarSign} label="Principal" value={formatCurrency(ff.principal)} size="small" />
+        <StatCard icon={TrendingUp} label="Total Pago" value={formatCurrency(ff.totalPayments)} size="large" />
+        <StatCard
+          icon={Percent}
+          label="Total Juros"
+          value={formatCurrency(ff.totalInterest)}
+          sub={`${ff.annualRate}% a.a. | ${ff.amortizationSystem}${periodo}`}
+          valueColor="text-orange-400"
+        />
+        <StatCard
+          icon={Calendar}
+          label="Total Amortizado"
+          value={formatCurrency(ff.totalAmortized)}
+          sub={`${ff.rows.length} parcela${ff.rows.length !== 1 ? 's' : ''}`}
+        />
+      </div>
+
+      {ff.comparison && escolhido && (
+        <div className="rounded-lg border border-white/5 overflow-hidden glass-panel mt-4">
+          <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground border-b border-white/5">
+            Comparação entre sistemas (mesmo principal, taxa, prazo e carência)
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-white/5 text-muted-foreground text-[10px] uppercase tracking-wide border-b border-white/5">
+                  <th className="px-3 py-2 text-left">Sistema</th>
+                  <th className="px-3 py-2 text-right">1ª parcela</th>
+                  <th className="px-3 py-2 text-right">Última parcela</th>
+                  <th className="px-3 py-2 text-right">Total de juros</th>
+                  <th className="px-3 py-2 text-right">Total pago</th>
+                  <th className="px-3 py-2 text-right">Juros vs. {SYSTEM_NAMES[ff.amortizationSystem]}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ff.comparison.map(c => {
+                  const atual = c.system === ff.amortizationSystem;
+                  const dif = c.totalInterest - escolhido.totalInterest;
+                  return (
+                    <tr key={c.system} className={`border-t border-white/5 ${atual ? 'bg-primary/5 font-semibold' : 'hover:bg-white/5'} transition-colors`}>
+                      <td className="px-3 py-1.5">
+                        {SYSTEM_NAMES[c.system]}
+                        {atual && <span className="ml-1.5 text-[10px] font-normal text-primary">escolhido</span>}
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-mono">{formatCurrency(c.firstPayment)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono">{formatCurrency(c.lastPayment)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-orange-400/80">{formatCurrency(c.totalInterest)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono">{formatCurrency(c.totalPayments)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-muted-foreground">
+                        {atual ? '—' : `${dif >= 0 ? '+' : '−'}${formatCurrency(Math.abs(dif))}`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {leitura && <p className="px-3 py-2 text-xs text-muted-foreground border-t border-white/5">{leitura}</p>}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -140,7 +288,9 @@ export function ResultsSummary({ result }: ResultsSummaryProps) {
   const isT4 = thesis === 'FLUXO_COMPLETO';
 
   // Standard summary for T1/T3/T5
-  const gain = result.finalAmount - result.initialAmount - result.totalAmortized;
+  // Ganho = o que sobrou + o que já foi devolvido (amortizações) − o que entrou (montante + aportes)
+  const totalContributed = result.totalContributed ?? 0;
+  const gain = result.finalAmount + result.totalAmortized - result.initialAmount - totalContributed;
   const isPositive = result.variationPercent >= 0;
   const variationColor = isPositive ? 'text-emerald-400' : 'text-red-400';
   const gainColor = gain >= 0 ? 'text-emerald-400' : 'text-red-400';
@@ -219,8 +369,11 @@ export function ResultsSummary({ result }: ResultsSummaryProps) {
               icon={Calendar}
               label={result.totalAmortized > 0 ? 'Ganho / Amortizado' : 'Ganho Bruto'}
               value={formatCurrency(gain)}
-              sub={result.totalAmortized > 0
-                ? `Amortizado: ${formatCurrency(result.totalAmortized)}`
+              sub={result.totalAmortized > 0 || totalContributed > 0
+                ? [
+                    result.totalAmortized > 0 ? `Amortizado: ${formatCurrency(result.totalAmortized)}` : '',
+                    totalContributed > 0 ? `Aportado: ${formatCurrency(totalContributed)}` : '',
+                  ].filter(Boolean).join(' · ')
                 : undefined}
               valueColor={gainColor}
             />

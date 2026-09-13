@@ -8,10 +8,20 @@
  *   fator_pro_rata = (1 + indice_mensal/100) ^ (dias_utilizados / dias_do_mes)
  *
  *   A base de cálculo (360 ou 365) configura o denominador do pro-rata.
+ *
+ *   Composição:
+ *   - "% do índice" (ex: 110% do IPCA): taxa_mensal_efetiva = taxa_mensal × percentual/100
+ *   - Índice + taxa (ex: IPCA + 6% a.a.): o fator do spread é composto em cada
+ *     segmento, (1 + spread/100)^(dias_corridos_do_segmento/base), para que
+ *     amortizações intermediárias deixem de render o spread a partir da data do evento.
+ *
+ *   Todo mês do período precisa de dado oficial ou de premissa; mês sem nenhum
+ *   dos dois gera MissingIndexDataError (antes entrava com 0%).
  */
 
 import Decimal from 'decimal.js';
 import { CalculationInput, CalculationMemoryRow, DayCountBasis, IndexDataPoint } from '../models/types';
+import { MissingIndexDataError } from '../models/errors';
 import { addDays, daysInMonth, toISODate } from '../utils/businessDays';
 
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP });
@@ -50,6 +60,19 @@ function daysInMonthByBasis(date: Date, basis: DayCountBasis): number {
 }
 
 /**
+ * Dias entre duas datas na contagem da base: 30E/360 para DC360
+ * (dia 31 conta como 30), dias corridos reais para DC365.
+ */
+function countSegmentDays(from: Date, to: Date, basis: DayCountBasis): number {
+  if (basis === DayCountBasis.DC360) {
+    const d1 = Math.min(from.getDate(), 30);
+    const d2 = Math.min(to.getDate(), 30);
+    return (to.getFullYear() - from.getFullYear()) * 360 + (to.getMonth() - from.getMonth()) * 30 + (d2 - d1);
+  }
+  return Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+/**
  * Gera segmentos mensais entre startDate e endDate.
  * Cada segmento representa a fração do mês utilizada.
  */
@@ -78,8 +101,9 @@ function buildMonthSegments(startDate: Date, endDate: Date, basis: DayCountBasis
     // Fim do segmento: início do próximo mês ou data final, o que vier primeiro
     const segmentEnd = new Date(Math.min(new Date(year, month + 1, 1).getTime(), end.getTime()));
 
-    // Dias utilizados no mês
-    const daysUsed = Math.round((segmentEnd.getTime() - current.getTime()) / (1000 * 60 * 60 * 24));
+    // Dias utilizados no mês: base 360 conta em 30/360 também no numerador
+    // (mês fechado = 30/30 = fator mensal integral); base 365 usa dias reais.
+    const daysUsed = countSegmentDays(current, segmentEnd, basis);
 
     const totalDays = daysInMonthByBasis(firstOfMonth, basis);
 
@@ -144,27 +168,56 @@ export function calculateMonthlyIndex(input: CalculationInput): CalculationMemor
   }
 
   const segments = buildMonthSegments(startDate, endDate, dayCountBasis);
+
+  // Meses sem dado oficial e sem premissa: erro explícito
+  const missingMonths = segments
+    .filter(seg => !rateMap.has(`${seg.year}-${String(seg.month + 1).padStart(2, '0')}`))
+    .map(seg => new Date(seg.year, seg.month, 1));
+  if (missingMonths.length > 0) {
+    const intervalos: { inicio: Date; fim: Date }[] = [];
+    for (const m of missingMonths) {
+      const ultimo = intervalos[intervalos.length - 1];
+      const mesSeguinte = ultimo && new Date(ultimo.fim.getFullYear(), ultimo.fim.getMonth() + 1, 1);
+      if (ultimo && mesSeguinte.getTime() === m.getTime()) ultimo.fim = m;
+      else intervalos.push({ inicio: m, fim: m });
+    }
+    throw new MissingIndexDataError(input.indexType ?? 'índice mensal', intervalos, true);
+  }
+
+  // Composição com o índice
+  const percentOfIndex = spread?.mode === 'percentage' ? new Decimal(spread.value).div(100) : null;
+  const additive = spread?.mode === 'additive' ? spread : undefined;
+  // Base do spread: additiveBase 360/365 quando informada (360 conta em 30E/360, para taxa
+  // informada ao mês); senão, a base do cálculo. O pro-rata do índice não muda.
+  const additiveBase = additive?.additiveBase != null ? Number(additive.additiveBase) : undefined;
+  const spreadBasis = additiveBase === DayCountBasis.DC360 || additiveBase === DayCountBasis.DC365
+    ? additiveBase
+    : dayCountBasis === DayCountBasis.DC360 ? DayCountBasis.DC360 : DayCountBasis.DC365;
+  const spreadBasisDays = spreadBasis === DayCountBasis.DC360 ? 360 : 365;
+  const spreadRate = additive ? new Decimal(additive.value).div(100).plus(1) : null;
+  const spreadDaysBetween = (from: Date, to: Date): number => countSegmentDays(from, to, spreadBasis);
+  const spreadFactorFor = (spreadDays: number): Decimal =>
+    spreadRate ? spreadRate.pow(new Decimal(spreadDays).div(spreadBasisDays)) : new Decimal(1);
+
   const rows: CalculationMemoryRow[] = [];
   let accumulatedFactor = new Decimal(1);
   let currentBalance = new Decimal(initialAmount);
 
   for (const seg of segments) {
     const key = `${seg.year}-${String(seg.month + 1).padStart(2, '0')}`;
-    const rateEntry = rateMap.get(key);
+    const rateEntry = rateMap.get(key)!;
 
-    let monthlyRate = 0;
-    let isProjected = false;
+    const monthlyRate = rateEntry.value;
+    const isProjected = rateEntry.isProjected;
+    // Taxa mensal efetiva (com "% do índice", se houver)
+    const effectiveMonthlyRate = percentOfIndex
+      ? new Decimal(monthlyRate).div(100).mul(percentOfIndex)
+      : new Decimal(monthlyRate).div(100);
 
-    if (rateEntry) {
-      monthlyRate = rateEntry.value;
-      isProjected = rateEntry.isProjected;
-    } else {
-      isProjected = true; // Sem dados → projetado (0%)
-    }
-
-    // fator_pro_rata = (1 + taxa_mensal/100) ^ (dias_utilizados / dias_do_mes)
+    // fator_pro_rata = (1 + taxa_mensal/100) ^ (dias_utilizados / dias_do_mes) × fator do spread
     const proRataExponent = new Decimal(seg.daysUsed).div(seg.totalDaysInMonth);
-    const monthFactor = new Decimal(1 + monthlyRate / 100).pow(proRataExponent);
+    const segSpreadDays = spreadDaysBetween(seg.startOfSegment, seg.endOfSegment);
+    const monthFactor = effectiveMonthlyRate.plus(1).pow(proRataExponent).mul(spreadFactorFor(segSpreadDays));
 
     const segStartFactor = accumulatedFactor;
     const segStartBalance = currentBalance;
@@ -177,9 +230,10 @@ export function calculateMonthlyIndex(input: CalculationInput): CalculationMemor
       d => d.getTime() > segStartTime && d.getTime() < segEndTime
     );
     for (const anchorDate of anchors) {
-      const elapsedDays = Math.round((anchorDate.getTime() - segStartTime) / 86400000);
+      const elapsedDays = countSegmentDays(seg.startOfSegment, anchorDate, dayCountBasis);
       const partialExponent = new Decimal(elapsedDays).div(seg.totalDaysInMonth);
-      const partialFactor = new Decimal(1 + monthlyRate / 100).pow(partialExponent);
+      const partialFactor = effectiveMonthlyRate.plus(1).pow(partialExponent)
+        .mul(spreadFactorFor(spreadDaysBetween(seg.startOfSegment, anchorDate)));
       const anchorAccFactor = segStartFactor.mul(partialFactor);
       const anchorBalance = segStartBalance.mul(partialFactor);
       rows.push({
@@ -203,36 +257,10 @@ export function calculateMonthlyIndex(input: CalculationInput): CalculationMemor
       accumulatedFactor: accumulatedFactor.toNumber(),
       balance: currentBalance.toNumber(),
       isProjected,
-      description: seg.daysUsed < seg.totalDaysInMonth
-        ? `Pro-rata: ${seg.daysUsed}/${seg.totalDaysInMonth} dias`
-        : undefined,
-    });
-  }
-
-  // Aplica spread aditivo ao fator acumulado final, se houver
-  if (spread?.mode === 'additive' && rows.length > 0) {
-    const totalDays = Math.round(
-      (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-    );
-    const basisDays = dayCountBasis === DayCountBasis.DC360 ? 360 : 365;
-    const spreadFactor = new Decimal(1 + spread.value / 100).pow(
-      new Decimal(totalDays).div(basisDays)
-    );
-
-    // Aplica o spread sobre o saldo final
-    const lastRow = rows[rows.length - 1];
-    const finalBalance = new Decimal(lastRow.balance).mul(spreadFactor);
-    const finalAccFactor = new Decimal(lastRow.accumulatedFactor).mul(spreadFactor);
-
-    // Adiciona linha de spread
-    rows.push({
-      date: new Date(endDate),
-      indexRate: spread.value,
-      dailyFactor: spreadFactor.toNumber(),
-      accumulatedFactor: finalAccFactor.toNumber(),
-      balance: finalBalance.toNumber(),
-      isProjected: false,
-      description: `Spread aditivo: ${spread.value}% a.a.`,
+      description: [
+        seg.daysUsed < seg.totalDaysInMonth ? `Pro-rata: ${seg.daysUsed}/${seg.totalDaysInMonth} dias` : '',
+        additive ? `Spread aditivo: ${additive.value}% a.a. (${segSpreadDays}/${spreadBasisDays})` : '',
+      ].filter(Boolean).join(' · ') || undefined,
     });
   }
 

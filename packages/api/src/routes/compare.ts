@@ -11,11 +11,11 @@ import {
   IndexType,
   DayCountBasis,
   Currency,
+  MissingIndexDataError,
   calculate,
   getPremisesRequiredFrom,
 } from '@correcao/core';
-import { getIndexDataWithCache } from '../services/BCBService';
-import { getSOFRWithCache } from '../services/FREDService';
+import { dataCivil, fetchIndexData, missingDataResponse, normalizeSpread } from './calculate';
 import logger from '../middleware/logger';
 
 export const compareRouter = Router();
@@ -94,10 +94,20 @@ compareRouter.post('/cenarios', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Máximo de 6 cenários por comparação.' });
   }
 
-  const startDate = new Date(body.startDate);
-  const endDate = new Date(body.endDate);
-  startDate.setHours(0, 0, 0, 0);
-  endDate.setHours(0, 0, 0, 0);
+  let startDate: Date;
+  let endDate: Date;
+  try {
+    startDate = dataCivil(body.startDate, 'startDate');
+    endDate = dataCivil(body.endDate, 'endDate');
+    for (const s of body.scenarios) {
+      for (const p of s.futurePremises ?? []) {
+        dataCivil(p.startDate, 'futurePremises.startDate');
+        dataCivil(p.endDate, 'futurePremises.endDate');
+      }
+    }
+  } catch (err: any) {
+    return res.status(400).json({ error: err.message });
+  }
 
   if (startDate >= endDate) {
     return res.status(400).json({ error: 'startDate deve ser anterior a endDate.' });
@@ -107,20 +117,17 @@ compareRouter.post('/cenarios', async (req: Request, res: Response) => {
 
   const scenarioResults = await Promise.all(
     body.scenarios.map(async (scenario) => {
+      let indexData: any[] = [];
       try {
-        let indexData: any[] = [];
         let warning: string | undefined;
 
         if (scenario.indexType !== IndexType.PREFIXADA) {
-          const fetched =
-            scenario.indexType === IndexType.SOFR
-              ? await getSOFRWithCache(startDate, endDate)
-              : await getIndexDataWithCache(scenario.indexType, startDate, endDate);
+          const fetched = await fetchIndexData(scenario.indexType, startDate, endDate);
 
           indexData = fetched.data;
           warning = (fetched as any).warning;
 
-          const premisesFrom = getPremisesRequiredFrom(endDate, indexData);
+          const premisesFrom = getPremisesRequiredFrom(endDate, indexData, scenario.indexType);
           if (premisesFrom && (!scenario.futurePremises?.length)) {
             return {
               label: scenario.label,
@@ -140,11 +147,11 @@ compareRouter.post('/cenarios', async (req: Request, res: Response) => {
           indexType: scenario.indexType,
           dayCountBasis: scenario.dayCountBasis,
           prefixedRate: scenario.prefixedRate,
-          spread: scenario.spread,
+          spread: normalizeSpread(scenario.spread),
           indexData,
           futurePremises: scenario.futurePremises?.map(p => ({
-            startDate: new Date(p.startDate),
-            endDate: new Date(p.endDate),
+            startDate: dataCivil(p.startDate, 'futurePremises.startDate'),
+            endDate: dataCivil(p.endDate, 'futurePremises.endDate'),
             rate: p.rate,
           })),
           currency,
@@ -161,6 +168,21 @@ compareRouter.post('/cenarios', async (req: Request, res: Response) => {
           warning,
         };
       } catch (err: any) {
+        if (err instanceof MissingIndexDataError || err?.name === 'MissingIndexDataError') {
+          // Lacuna no futuro reabre o diálogo de premissas do cenário; lacuna no
+          // histórico volta como erro do cenário, com a mensagem dos intervalos.
+          const faltante = missingDataResponse(err, endDate, indexData, scenario.indexType);
+          return {
+            label: scenario.label,
+            indexType: scenario.indexType,
+            error: faltante.premisesRequiredFrom ? 'Premissas futuras necessárias' : faltante.error,
+            detail: faltante.error,
+            premisesRequiredFrom: faltante.premisesRequiredFrom,
+            lastAvailableDate: faltante.lastAvailableDate,
+            lastAvailableRate: faltante.lastAvailableRate,
+            missingRanges: faltante.missingRanges,
+          };
+        }
         return {
           label: scenario.label,
           indexType: scenario.indexType,

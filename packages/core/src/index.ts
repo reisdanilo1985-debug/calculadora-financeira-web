@@ -1,6 +1,7 @@
 // Ponto de entrada do package @correcao/core
 
 export * from './models/types';
+export * from './models/errors';
 export * from './engines/CDIEngine';
 export * from './engines/MonthlyIndexEngine';
 export * from './engines/SOFREngine';

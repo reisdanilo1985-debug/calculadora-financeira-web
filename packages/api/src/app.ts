@@ -12,24 +12,41 @@ import { retirementRouter } from './routes/retirement';
 import { tesourariaRouter } from './routes/tesouraria';
 import logger from './middleware/logger';
 
+/** Erro de origem recusada pelo CORS (vira 403 no error handler). */
+class CorsOrigemRecusada extends Error {
+  constructor(readonly origem: string) {
+    super(`CORS: origem não permitida — ${origem}`);
+    this.name = 'CorsOrigemRecusada';
+  }
+}
+
+/** Subdomínios HTTPS de Vercel/Render (deploys de produção e de preview). */
+const SUBDOMINIO_PLATAFORMA = /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.(vercel\.app|onrender\.com)$/i;
+
 export function createApp() {
   const app = express();
 
-  // Middlewares — aceita múltiplas origens separadas por vírgula em CORS_ORIGIN
+  // CORS — origens exatas em CORS_ORIGIN (separadas por vírgula; barra final ignorada).
   const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
     .split(',')
-    .map(o => o.trim());
+    .map(o => o.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+
+  // Sem CORS_STRICT=1 continua aceitando qualquer *.vercel.app / *.onrender.com
+  // (padrão anterior — o domínio de produção do front não está versionado).
+  // Com CORS_STRICT=1, apenas as origens listadas em CORS_ORIGIN.
+  const permitirSubdominiosPlataforma = process.env.CORS_STRICT !== '1';
 
   app.use(cors({
     origin: (origin, callback) => {
       // Permite requests sem origin (curl, Render health check, etc.)
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
-      // Permite qualquer subdomínio .vercel.app e .onrender.com
-      if (/\.(vercel\.app|onrender\.com)$/.test(origin)) return callback(null, true);
-      callback(new Error(`CORS: origem não permitida — ${origin}`));
+      if (permitirSubdominiosPlataforma && SUBDOMINIO_PLATAFORMA.test(origin)) return callback(null, true);
+      callback(new CorsOrigemRecusada(origin));
     },
-    credentials: true,
+    // Sem `credentials`: o front não usa cookies nem autenticação HTTP (axios sem
+    // withCredentials); a credencial administrativa vai no header x-admin-token.
   }));
 
   app.use(express.json({ limit: '1mb' }));
@@ -68,6 +85,11 @@ export function createApp() {
 
   // Error handler
   app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    if (err instanceof CorsOrigemRecusada) {
+      logger.warn(err.message);
+      res.status(403).json({ error: 'Origem não permitida' });
+      return;
+    }
     logger.error('Erro não tratado:', err);
     res.status(500).json({ error: 'Erro interno do servidor' });
   });

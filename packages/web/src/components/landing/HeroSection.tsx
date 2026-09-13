@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowRight, PlayCircle, ShieldCheck } from 'lucide-react';
+import { CALCULADORES } from '@/components/tesouraria/calcConfig';
 
 interface HeroSectionProps {
   onNavigate: (view: string) => void;
@@ -24,7 +25,7 @@ export function HeroSection({ onNavigate, onSeeDemo }: HeroSectionProps) {
       </h1>
 
       <p className="relative text-lg md:text-xl text-muted-foreground max-w-2xl mb-10 leading-relaxed font-light animate-fade-in">
-        Atualização monetária com memorial auditável, 13 calculadoras de tesouraria,
+        Atualização monetária com memorial auditável, {CALCULADORES.length} calculadoras de tesouraria,
         PTAX oficial, WACC Damodaran e simulação de aposentadoria — em um único lugar.
       </p>
 

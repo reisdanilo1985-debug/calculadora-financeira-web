@@ -8,7 +8,18 @@ function fmt(n: number): string {
   return n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: decimals });
 }
 
+/** Rótulos pt-BR de chaves de texto que o humanize não acentua. */
+const ROTULOS: Record<string, string> = {
+  convencao: 'Convenção',
+  alertaTirMultipla: 'Alerta — TIR múltipla',
+  criterioVeredito: 'Critério do veredito',
+};
+
+/** Textos acima deste tamanho (convenções, alertas) saem como nota de largura total, não como card da grade. */
+const TEXTO_LONGO = 40;
+
 function humanize(key: string): string {
+  if (ROTULOS[key]) return ROTULOS[key];
   return key
     .replace(/([A-Z])/g, ' $1')
     .replace(/^./, c => c.toUpperCase())
@@ -55,6 +66,7 @@ export function ResultView({ result }: { result: any }) {
   if (result == null) return null;
 
   const scalars: [string, any][] = [];
+  const notas: [string, string][] = [];
   const blocks: React.ReactNode[] = [];
 
   for (const [key, value] of Object.entries(result)) {
@@ -77,6 +89,8 @@ export function ResultView({ result }: { result: any }) {
           </div>
         </div>
       );
+    } else if (typeof value === 'string' && value.length > TEXTO_LONGO) {
+      notas.push([key, value]);
     } else {
       scalars.push([key, value]);
     }
@@ -96,6 +110,12 @@ export function ResultView({ result }: { result: any }) {
           ))}
         </div>
       )}
+      {notas.map(([k, v]) => (
+        <div key={k} className="rounded-md border border-white/5 bg-white/5 p-3">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground/70">{humanize(k)}</div>
+          <p className="text-[11px] text-foreground/80 mt-1 leading-relaxed break-words">{v}</p>
+        </div>
+      ))}
       {blocks}
     </div>
   );

@@ -10,15 +10,15 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { useInView } from '@/hooks/useInView';
+import { CALCULADORES } from '@/components/tesouraria/calcConfig';
 
 const INDEX_CHIPS = ['CDI', 'Selic', 'IPCA', 'IGP-M', 'INCC', 'SOFR', 'Pré', 'PTAX'];
 
 const TREASURY_CHIPS = [
-  'Swap CDI×Pré',
-  'Duration & DV01',
-  'PU LTN/NTN-F',
-  'Forward & NDF',
-  'TIR / VPL',
+  'Swap pré × CDI',
+  'Duration e DV01',
+  'Preço de LTN e NTN-F',
+  'Dólar a termo',
   'Curvas DI',
 ];
 
@@ -84,7 +84,7 @@ export function FeatureShowcase({ onNavigate }: FeatureShowcaseProps) {
             icon={TrendingUp}
             color="text-emerald-400"
             title="Calculadora de Correção"
-            desc="Motor de atualização monetária com fator diário alinhado ao BACEN, cinco teses de cálculo (correção simples, valor presente, carência, fluxo SAC/Price/Bullet e juros remuneratórios), amortizações e memorial passo a passo exportável em Excel e PDF."
+            desc="Motor de atualização monetária com fator diário alinhado ao BACEN, cinco teses de cálculo (correção simples, valor presente com TIR e perpetuidade, carência, fluxo SAC/Price/Bullet com comparação entre sistemas e juros remuneratórios), amortizações e memorial passo a passo exportável em Excel e PDF."
             chips={INDEX_CHIPS}
             onClick={() => onNavigate('calculadora')}
           />
@@ -92,7 +92,7 @@ export function FeatureShowcase({ onNavigate }: FeatureShowcaseProps) {
             icon={Landmark}
             color="text-amber-400"
             title="Mesa de Tesouraria"
-            desc="Treze calculadoras profissionais para operações de mercado: swap, duration e convexidade, preço unitário de títulos públicos, forward e NDF de dólar, TIR/VPL e conversões entre convenções de juros — com premissas de mercado ao vivo."
+            desc={`${CALCULADORES.length} calculadoras profissionais para operações de mercado: swap, duration e convexidade, preço de títulos públicos, dólar a termo (forward e NDF) e conversões entre convenções de juros — com premissas de mercado ao vivo.`}
             chips={TREASURY_CHIPS}
             onClick={() => onNavigate('tesouraria')}
           />

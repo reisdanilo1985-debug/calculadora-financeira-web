@@ -20,6 +20,7 @@ export interface CalculationMemoryRow {
   accumulatedFactor: number;
   balance: number;
   amortizationAmount?: number;
+  contributionAmount?: number;
   isProjected: boolean;
   description?: string;
 }
@@ -34,6 +35,7 @@ export interface CalculationResult {
   indexType: string;
   dayCountBasis: number;
   totalAmortized: number;
+  totalContributed?: number;
   memoryRows: CalculationMemoryRow[];
   hasProjections: boolean;
   projectionStartDate?: string;
@@ -55,6 +57,8 @@ export interface CalculationRequest {
   spread?: {
     mode: 'percentage' | 'additive';
     value: number;
+    /** Base da taxa adicional: 252 (dias úteis, B3) ou 360/365 (dias corridos) */
+    additiveBase?: number;
   };
   amortizations?: {
     date: string;
@@ -63,6 +67,8 @@ export interface CalculationRequest {
     periodicity?: string;
     periodicEndDate?: string;
     isPeriodicPercentage?: boolean;
+    /** OUT = amortização (padrão), IN = aporte */
+    direction?: 'OUT' | 'IN';
   }[];
   futurePremises?: {
     startDate: string;
@@ -75,12 +81,15 @@ export interface CalculationRequest {
   cashFlows?: { id?: string; date: string; amount: number; label?: string }[];
   discountRate?: number;
   referenceDate?: string;
+  perpetuity?: DCFPerpetuity;
   // T3
   gracePeriod?: { type: GracePeriodType; endDate: string };
   // T4
   amortizationSystem?: AmortizationSystem;
   remunerationRate?: number;
+  /** Nº de parcelas, na periodicidade de installmentPeriodicity */
   numberOfPeriods?: number;
+  installmentPeriodicity?: Periodicity;
   // T5
   interestType?: InterestType;
   interestRate?: number;
@@ -101,13 +110,46 @@ export interface DCFFlowResult {
   contributionPercent: number;
 }
 
+export type Periodicity = 'MONTHLY' | 'QUARTERLY' | 'SEMIANNUAL' | 'ANNUAL';
+
+/** Perpetuidade de Gordon (T2): fluxo base crescendo g % a.a. após o último fluxo */
+export interface DCFPerpetuity {
+  growthRate: number;
+  periodicity: Periodicity;
+  baseCashFlow?: number;
+}
+
+export interface DCFTerminalValue {
+  date: string;
+  baseCashFlow: number;
+  growthRate: number;
+  periodicity: Periodicity;
+  periodDiscountRate: number;
+  periodGrowthRate: number;
+  nominalValue: number;
+  discountFactor: number;
+  timeFractionYears: number;
+  pv: number;
+  contributionPercent: number;
+}
+
 export interface DCFResult {
   referenceDate: string;
   discountRate: number;
+  /** VP total (VPL com saídas), inclui a perpetuidade */
   totalPV: number;
+  explicitPV: number;
   totalNominal: number;
-  macaulayDuration: number;
+  /** null quando algum VP é negativo */
+  macaulayDuration: number | null;
   flows: DCFFlowResult[];
+  terminalValue?: DCFTerminalValue;
+  /** TIR em % a.a. */
+  irr?: number;
+  irrMonthly?: number;
+  irrs?: number[];
+  signChanges: number;
+  irrWarning?: string;
 }
 
 export interface FullFlowMemoryRow {
@@ -123,16 +165,30 @@ export interface FullFlowMemoryRow {
   description?: string;
 }
 
+export interface FullFlowSystemSummary {
+  system: AmortizationSystem;
+  /** Parcela do 1º período após a carência */
+  firstPayment: number;
+  lastPayment: number;
+  totalInterest: number;
+  totalPayments: number;
+}
+
 export interface FullFlowResult {
   principal: number;
   annualRate: number;
   amortizationSystem: AmortizationSystem;
   currency: Currency;
+  periodicity?: Periodicity;
+  /** Taxa equivalente ao período das parcelas, em % */
+  periodRate?: number;
   totalInterest: number;
   totalMonetaryCorrection: number;
   totalPayments: number;
   totalAmortized: number;
   rows: FullFlowMemoryRow[];
+  /** SAC, Price e Bullet com o mesmo principal, taxa, prazo e carência */
+  comparison?: FullFlowSystemSummary[];
 }
 
 export interface GracePeriodInfo {
@@ -586,7 +642,7 @@ export async function refreshPremissasTesouraria(): Promise<PremissasSnapshot> {
   return data;
 }
 
-/** Executa um dos 13 calculadores de Tesouraria. Retorna o objeto estruturado do core. */
+/** Executa um calculador de Tesouraria. Retorna o objeto estruturado do core. */
 export async function runTesourariaCalc<T = any>(nome: string, body: Record<string, any>): Promise<T> {
   const { data } = await api.post<T>(`/tesouraria/calc/${nome}`, body);
   return data;

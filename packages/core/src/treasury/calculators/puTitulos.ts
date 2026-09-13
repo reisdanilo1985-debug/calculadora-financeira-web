@@ -22,6 +22,15 @@ export function puLtn(input: LtnInput): { pu: number } {
   return { pu: pu.toNumber() };
 }
 
+/**
+ * Taxa do cupom periódico pela convenção NTN-F (STN/ANBIMA): (1 + taxa)^(1/m) − 1.
+ * Ex.: 10% a.a. semestral → 4,8808848…% (cupom de R$ 48,80885 por R$ 1.000).
+ * Compartilhada com o calculador de duration (modo 'ntnf').
+ */
+export function taxaCupomPeriodicoNtnf(couponRateAnnual: Decimal.Value, m: Decimal.Value): Decimal {
+  return D(1).plus(couponRateAnnual).pow(D(1).div(m)).minus(1);
+}
+
 export interface NtnfInput {
   /** Valor de face. */
   face: number;
@@ -53,7 +62,7 @@ export function puNtnf(input: NtnfInput): NtnfResult {
   if (!cuponsDu.length) throw new Error('puNtnf: cuponsDu não pode ser vazio.');
 
   // Cupom periódico pela convenção NTN-F: (1+taxa)^(1/m) − 1
-  const cupomTaxa = D(1).plus(couponRateAnnual).pow(D(1).div(m)).minus(1);
+  const cupomTaxa = taxaCupomPeriodicoNtnf(couponRateAnnual, m);
   const cupomValor = D(face).mul(cupomTaxa);
 
   const fluxos: NtnfFlow[] = [];

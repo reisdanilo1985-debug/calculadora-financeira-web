@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { NumericFormat } from 'react-number-format';
 import { getExchangeRates, getExchangeSummary, getLatestRates, LatestRate, ExchangeRateData, ExchangeSummaryData } from '@/lib/api';
+import { hojeISO, somarDiasISO } from '@/lib/datas';
 import {
   LineChart,
   Line,
@@ -168,8 +169,9 @@ function CurrencyConverter() {
 }
 
 export function ExchangePanel() {
-  const [startDate, setStartDate] = useState(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
-  const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
+  // Datas civis do relógio do usuário (toISOString() já é "amanhã" após 21h no Brasil)
+  const [startDate, setStartDate] = useState(() => somarDiasISO(hojeISO(), -30));
+  const [endDate, setEndDate] = useState(() => hojeISO());
   const [selectedCurrencies, setSelectedCurrencies] = useState<string[]>(['USD', 'EUR']);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -188,21 +190,27 @@ export function ExchangePanel() {
       setError('Selecione pelo menos uma moeda.');
       return;
     }
-    if (startDate >= endDate) {
-      setError('Data inicial deve ser anterior à final.');
+    if (!startDate || !endDate) {
+      setError('Informe as datas inicial e final.');
       return;
     }
-    
+    // Datas 'AAAA-MM-DD' comparam como texto; um único dia (início = fim) é permitido.
+    if (startDate > endDate) {
+      setError('Data inicial não pode ser posterior à final.');
+      return;
+    }
+
     setError('');
     setLoading(true);
     try {
+      // Enviadas como data civil 'AAAA-MM-DD' (sem hora nem fuso).
       const summaryData = await getExchangeSummary(selectedCurrencies, startDate, endDate);
       const ratesData = await getExchangeRates(selectedCurrencies, startDate, endDate);
-      
+
       setSummaries(summaryData);
       setRates(ratesData);
     } catch (err: any) {
-      setError(err.message || 'Erro ao buscar taxas de câmbio');
+      setError(err.response?.data?.error || err.message || 'Erro ao buscar taxas de câmbio');
     } finally {
       setLoading(false);
     }

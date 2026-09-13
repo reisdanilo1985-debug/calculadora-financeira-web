@@ -32,6 +32,14 @@ const BRAZILIAN_HOLIDAYS_FIXED_RULES = [
     '12-25', // Natal
 ];
 /**
+ * Feriados fixos com vigência a partir de um ano específico.
+ * 20/11 (Dia Nacional de Zumbi e da Consciência Negra) é feriado nacional
+ * desde 2024 (Lei 14.759/2023).
+ */
+const BRAZILIAN_HOLIDAYS_FIXED_RULES_FROM = [
+    { rule: '11-20', fromYear: 2024 },
+];
+/**
  * Calcula a Páscoa pelo algoritmo de Butcher (Anonymous Gregorian algorithm).
  */
 function easterDate(year) {
@@ -61,7 +69,9 @@ function getMobileHolidays(year) {
     const addOffset = (base, offset) => {
         const d = new Date(base);
         d.setDate(d.getDate() + offset);
-        return d.toISOString().slice(0, 10);
+        // toISODate usa hora local — toISOString() deslocaria a data em
+        // servidores com fuso UTC+ (a Páscoa é calculada em hora local).
+        return toISODate(d);
     };
     result.push(addOffset(easter, -48)); // Segunda-feira de Carnaval
     result.push(addOffset(easter, -47)); // Terça-feira de Carnaval
@@ -84,6 +94,12 @@ function getHolidaysForYear(year) {
     // Feriados fixos
     for (const rule of BRAZILIAN_HOLIDAYS_FIXED_RULES) {
         holidays.add(`${year}-${rule}`);
+    }
+    // Feriados fixos com vigência a partir de um ano
+    for (const { rule, fromYear } of BRAZILIAN_HOLIDAYS_FIXED_RULES_FROM) {
+        if (year >= fromYear) {
+            holidays.add(`${year}-${rule}`);
+        }
     }
     // Feriados móveis
     for (const h of getMobileHolidays(year)) {

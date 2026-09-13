@@ -53,6 +53,13 @@ export declare enum PeriodicityType {
     SEMIANNUAL = "SEMIANNUAL",
     ANNUAL = "ANNUAL"
 }
+/** Sentido do fluxo de um evento do cronograma */
+export declare enum FlowDirection {
+    /** Amortização/pagamento: reduz o saldo (padrão) */
+    OUT = "OUT",
+    /** Aporte/captação: aumenta o saldo */
+    IN = "IN"
+}
 /** Uma entrada de amortização */
 export interface AmortizationEntry {
     /** Data da amortização */
@@ -72,6 +79,8 @@ export interface AmortizationEntry {
     periodicEndDate?: Date;
     /** Se true, o valor da amortização periódica é percentual do saldo */
     isPeriodicPercentage?: boolean;
+    /** OUT = amortização (padrão), IN = aporte */
+    direction?: FlowDirection;
 }
 /** Spread/composição aplicado ao indexador */
 export interface SpreadConfig {
@@ -89,7 +98,12 @@ export interface SpreadConfig {
     value: number;
     /**
      * Base da taxa adicional (apenas para mode='additive'):
-     * - Padrão: DayCountBasis.DC365
+     * - CDI/Selic: 252 = Fator de Spread B3 por dia útil; 360/365 = dias corridos.
+     *   Padrão: DayCountBasis.DC365.
+     * - Índices mensais: 360 = 30E/360 (taxa ao mês: mês fechado rende a taxa mensal exata);
+     *   365 = dias corridos/365. Padrão: a base do cálculo. A base do spread não altera o
+     *   pro-rata do índice.
+     * - SOFR: taxa somada à SOFR em ACT/360.
      */
     additiveBase?: DayCountBasis;
 }
@@ -151,12 +165,16 @@ export interface CalculationInput {
     discountRate?: number;
     /** Data de referência para DCF (T2) — default: startDate */
     referenceDate?: Date;
+    /** Perpetuidade (valor terminal de Gordon) para DCF (T2) */
+    perpetuity?: DCFPerpetuityConfig;
     /** Sistema de amortização para Fluxo Completo (T4) */
     amortizationSystem?: AmortizationSystem;
     /** Taxa de remuneração anual em % para Fluxo Completo (T4) */
     remunerationRate?: number;
-    /** Número de períodos mensais para Fluxo Completo (T4) */
+    /** Número de parcelas para Fluxo Completo (T4), na periodicidade de installmentPeriodicity */
     numberOfPeriods?: number;
+    /** Periodicidade das parcelas do Fluxo Completo (T4). Padrão: MONTHLY */
+    installmentPeriodicity?: PeriodicityType;
     /**
      * Datas onde o engine deve gerar uma linha-âncora (mesmo que não haja
      * dado de índice nesse dia). Usado pelo CalculationEngine para garantir
@@ -179,6 +197,8 @@ export interface CalculationMemoryRow {
     balance: number;
     /** Valor amortizado nesta data (se houver) */
     amortizationAmount?: number;
+    /** Valor aportado nesta data (se houver) */
+    contributionAmount?: number;
     /** Se este dado é uma premissa futura */
     isProjected: boolean;
     /** Descrição adicional (ex: "Amortização de 10%") */
@@ -204,6 +224,8 @@ export interface CalculationResult {
     dayCountBasis: DayCountBasis;
     /** Total amortizado no período */
     totalAmortized: number;
+    /** Total aportado no período */
+    totalContributed: number;
     /** Memória de cálculo detalhada (linha por linha) */
     memoryRows: CalculationMemoryRow[];
     /** Se o resultado contém projeções (premissas futuras) */
@@ -313,16 +335,63 @@ export interface DCFFlowResult {
     timeFractionYears: number;
     contributionPercent: number;
 }
+/**
+ * Perpetuidade (Gordon) do Valor Presente (T2): o fluxo base se repete a cada período,
+ * crescendo à taxa g, a partir do período seguinte ao último fluxo explícito.
+ */
+export interface DCFPerpetuityConfig {
+    /** Crescimento do fluxo na perpetuidade, em % a.a. (0 ou negativo permitido; > −100) */
+    growthRate: number;
+    /** Periodicidade do fluxo perpétuo */
+    periodicity: PeriodicityType;
+    /** Fluxo base do último período (normalizado). Padrão: soma dos fluxos da última data */
+    baseCashFlow?: number;
+}
+/** Valor terminal da perpetuidade, avaliado na data do último fluxo explícito */
+export interface DCFTerminalValueResult {
+    /** Data do último fluxo explícito (onde o valor terminal é avaliado) */
+    date: Date;
+    baseCashFlow: number;
+    /** Crescimento em % a.a. */
+    growthRate: number;
+    periodicity: PeriodicityType;
+    /** Taxa de desconto equivalente ao período, em % */
+    periodDiscountRate: number;
+    /** Crescimento equivalente ao período, em % */
+    periodGrowthRate: number;
+    /** VT_N = fluxo base × (1 + g_p) / (r_p − g_p) */
+    nominalValue: number;
+    discountFactor: number;
+    timeFractionYears: number;
+    pv: number;
+    contributionPercent: number;
+}
 /** Resultado completo de Valor Presente (T2) */
 export interface DCFResult {
     referenceDate: Date;
     discountRate: number;
     dayCountBasis: DayCountBasis;
     currency: Currency;
+    /** VP total (VPL, quando há saídas): fluxos explícitos + perpetuidade */
     totalPV: number;
+    /** VP só dos fluxos explícitos */
+    explicitPV: number;
+    /** Soma nominal dos fluxos explícitos (sem o valor terminal) */
     totalNominal: number;
-    macaulayDuration: number;
+    /** Duration de Macaulay em anos; null quando algum VP é negativo (não definida) */
+    macaulayDuration: number | null;
     flows: DCFFlowResult[];
+    terminalValue?: DCFTerminalValueResult;
+    /** TIR em % a.a. na mesma contagem de tempo do VP (presente quando há saídas e entradas e a TIR existe) */
+    irr?: number;
+    /** TIR em % a.m. equivalente */
+    irrMonthly?: number;
+    /** Todas as TIRs encontradas entre −99% e 1.000% a.a. (mais de uma = TIR múltipla) */
+    irrs?: number[];
+    /** Trocas de sinal do fluxo em ordem cronológica (inclui o fluxo perpétuo) */
+    signChanges: number;
+    /** Aviso sobre a TIR (inexistente, múltipla ou possivelmente múltipla) */
+    irrWarning?: string;
 }
 /** Linha da memória de cálculo para Fluxo Completo (T4) */
 export interface FullFlowMemoryRow {
@@ -344,11 +413,27 @@ export interface FullFlowResult {
     annualRate: number;
     amortizationSystem: AmortizationSystem;
     currency: Currency;
+    /** Periodicidade das parcelas */
+    periodicity: PeriodicityType;
+    /** Taxa equivalente ao período das parcelas, em % */
+    periodRate: number;
     totalInterest: number;
     totalMonetaryCorrection: number;
     totalPayments: number;
     totalAmortized: number;
     rows: FullFlowMemoryRow[];
+    /** Os três sistemas com o mesmo principal, taxa, prazo e carência (preenchido pelo CalculationEngine) */
+    comparison?: FullFlowSystemSummary[];
+}
+/** Resumo de um sistema de amortização para comparação lado a lado */
+export interface FullFlowSystemSummary {
+    system: AmortizationSystem;
+    /** Parcela do 1º período após a carência */
+    firstPayment: number;
+    /** Parcela do último período */
+    lastPayment: number;
+    totalInterest: number;
+    totalPayments: number;
 }
 /** Informações de carência no resultado */
 export interface GracePeriodInfo {

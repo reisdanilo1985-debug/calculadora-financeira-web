@@ -1,12 +1,21 @@
 /**
  * Engine de cálculo para SOFR (Secured Overnight Financing Rate).
- * Convenção: ACT/360 (dias corridos sobre base 360).
+ * Convenção: ACT/360 (dias corridos sobre base 360), metodologia do NY Fed
+ * ("SOFR Averages and Index").
  *
- * Fórmula para cada dia corrido:
- *   fator_dia = 1 + (sofr_anual/100) * (dias_corridos/360)
+ * Fórmula por publicação:
+ *   fator_intervalo = 1 + (sofr_anual/100) × (n/360)
+ *   n = dias corridos até a próxima publicação (fins de semana e feriados
+ *   americanos NÃO capitalizam — rendem juros simples dentro do intervalo).
  *
- * Para fins de semana e feriados americanos, a taxa do último dia útil é replicada.
- * Para feriados americanos, usamos simplificação: replicamos taxa de sexta-feira.
+ * A memória continua com uma linha por dia corrido: o fator do dia é a razão
+ * entre o fator linear do intervalo no fim e no início daquele dia, de modo que
+ * o produto no intervalo é exatamente 1 + r·n/360.
+ *
+ * Se o período começa em dia sem publicação, vale a última taxa publicada antes
+ * do início. Composição: "% do índice" multiplica a taxa; índice + taxa soma o
+ * spread à SOFR (ACT/360). Dias sem publicação por mais de
+ * MAX_DIAS_SEM_PUBLICACAO geram MissingIndexDataError.
  */
 import { CalculationInput, CalculationMemoryRow } from '../models/types';
 /**

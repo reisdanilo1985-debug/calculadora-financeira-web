@@ -128,6 +128,64 @@ describe('POST /api/calcular', () => {
       expect(typeof res.body.dcfResult.totalPV).toBe('number');
       expect(Number.isNaN(res.body.dcfResult.totalPV)).toBe(false);
     });
+
+    const vp = (extra: Record<string, unknown>) => ({
+      thesisType: 'VALOR_PRESENTE',
+      startDate: '2025-01-01T12:00:00',
+      referenceDate: '2025-01-01T12:00:00',
+      dayCountBasis: 365,
+      discountRate: 10,
+      ...extra,
+    });
+
+    it('fluxos com sinal: devolve TIR e aceita fluxo na data de referência', async () => {
+      const res = await request(app).post('/api/calcular').send(vp({
+        cashFlows: [{ date: '2025-01-01T12:00:00', amount: -1000 }, { date: '2026-01-01T12:00:00', amount: 1100 }],
+      }));
+      expect(res.status).toBe(200);
+      expectNoNaN(res.body);
+      expect(res.body.dcfResult.irr).toBeCloseTo(10, 8);
+      expect(res.body.dcfResult.totalPV).toBeCloseTo(0, 8);
+      expect(res.body.dcfResult.macaulayDuration).toBeNull();
+    });
+
+    it('perpetuidade de Gordon: VP total = FC / (r − g) e data do valor terminal em ISO', async () => {
+      const res = await request(app).post('/api/calcular').send(vp({
+        cashFlows: [{ date: '2026-01-01T12:00:00', amount: 100 }],
+        perpetuity: { growthRate: 2, periodicity: 'ANNUAL' },
+      }));
+      expect(res.status).toBe(200);
+      expectNoNaN(res.body);
+      expect(res.body.finalAmount).toBeCloseTo(1250, 8);
+      expect(res.body.dcfResult.terminalValue.nominalValue).toBeCloseTo(1275, 8);
+      expect(res.body.dcfResult.terminalValue.date).toMatch(/^2026-01-01T/);
+    });
+
+    it('perpetuidade com crescimento ≥ taxa → 400', async () => {
+      const res = await request(app).post('/api/calcular').send(vp({
+        cashFlows: [{ date: '2026-01-01T12:00:00', amount: 100 }],
+        perpetuity: { growthRate: 10, periodicity: 'ANNUAL' },
+      }));
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/maior que o crescimento/);
+    });
+
+    it('periodicidade da perpetuidade fora do enum → 400', async () => {
+      const res = await request(app).post('/api/calcular').send(vp({
+        cashFlows: [{ date: '2026-01-01T12:00:00', amount: 100 }],
+        perpetuity: { growthRate: 2, periodicity: 'WEEKLY' },
+      }));
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('perpetuity.periodicity');
+    });
+
+    it('fluxo anterior à data de referência → 400', async () => {
+      const res = await request(app).post('/api/calcular').send(vp({
+        cashFlows: [{ date: '2024-12-31T12:00:00', amount: 100 }],
+      }));
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/anterior à data de referência/);
+    });
   });
 
   describe('FLUXO_COMPLETO', () => {
@@ -168,6 +226,40 @@ describe('POST /api/calcular', () => {
       expect(res.body.fullFlowResult).toBeDefined();
       expect(Array.isArray(res.body.fullFlowResult.rows)).toBe(true);
       expect(res.body.fullFlowResult.rows.length).toBeGreaterThan(0);
+    });
+
+    const t4 = (extra: Record<string, unknown>) => ({
+      thesisType: 'FLUXO_COMPLETO',
+      initialAmount: 100000,
+      startDate: '2025-01-15T12:00:00',
+      numberOfPeriods: 4,
+      remunerationRate: 12,
+      amortizationSystem: 'PRICE',
+      ...extra,
+    });
+
+    it('parcelas trimestrais e comparação SAC × Price × Bullet', async () => {
+      const res = await request(app).post('/api/calcular').send(t4({ installmentPeriodicity: 'QUARTERLY' }));
+      expect(res.status).toBe(200);
+      expectNoNaN(res.body);
+      const ff = res.body.fullFlowResult;
+      expect(ff.periodicity).toBe('QUARTERLY');
+      expect(ff.rows.map((r: any) => r.date.slice(0, 10))).toEqual(['2025-04-15', '2025-07-15', '2025-10-15', '2026-01-15']);
+      expect(ff.comparison.map((c: any) => c.system)).toEqual(['SAC', 'PRICE', 'BULLET']);
+    });
+
+    it('periodicidade fora do enum → 400', async () => {
+      const res = await request(app).post('/api/calcular').send(t4({ installmentPeriodicity: 'WEEKLY' }));
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('installmentPeriodicity');
+    });
+
+    it('carência maior ou igual ao prazo → 400 com a mensagem do motor', async () => {
+      const res = await request(app).post('/api/calcular').send(t4({
+        gracePeriod: { type: 'A', endDate: '2025-05-15T12:00:00' },
+      }));
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/não resta nenhum período de amortização/);
     });
   });
 

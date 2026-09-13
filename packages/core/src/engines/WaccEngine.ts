@@ -20,7 +20,15 @@
  *   E   = Equity / Market Cap (valor de mercado)
  *   V   = D + E (valor total da firma)
  *   Kd  = Custo da dívida pré-imposto
+ *
+ * Moeda e regime: Rf, ERP, CRP e Kd devem estar na MESMA moeda e no MESMO regime (nominal/real).
+ * Para levar uma taxa de uma moeda a outra use `ajustarTaxaPorDiferencialInflacao` (Fisher).
  */
+
+import Decimal from 'decimal.js';
+
+export type MoedaWacc = 'BRL' | 'USD' | 'EUR';
+export type RegimeTaxa = 'nominal' | 'real';
 
 export interface WaccInput {
   /** Setor de atuação da empresa */
@@ -28,7 +36,7 @@ export interface WaccInput {
   /** País (para sugerir CRP) */
   pais: string;
   /** Moeda do cálculo */
-  moeda: 'BRL' | 'USD' | 'EUR';
+  moeda: MoedaWacc;
 
   // ── Risco de Mercado ──────────────────────────────────
   /** Taxa Livre de Risco — Rf (% a.a.) */
@@ -73,8 +81,29 @@ export interface WaccResult {
   // WACC final
   wacc: number;
 
+  // Sensibilidade: ΔWACC (p.p.) por choque isolado em cada premissa, recalculado pelo motor
+  sensibilidade: WaccSensibilidadeItem[];
+
   // Memorial detalhado (para exibição das fórmulas)
   memorial: WaccMemorialStep[];
+}
+
+export type WaccPremissaSensibilidade = 'rf' | 'erp' | 'beta' | 'kd' | 'ir' | 'de';
+
+export interface WaccSensibilidadeItem {
+  id: WaccPremissaSensibilidade;
+  /** Premissa chocada (ex.: "Taxa livre de risco (Rf)") */
+  premissa: string;
+  /** Choque aplicado (ex.: "+1 p.p.", "+10%") */
+  choque: string;
+  /** WACC recalculado com o choque (% a.a.); null se o cenário base não for finito */
+  waccChocado: number | null;
+  /** WACC_chocado − WACC_base, em pontos percentuais; null se não for finito */
+  deltaWaccPP: number | null;
+  /** Decomposição do efeito (só no choque de IR: via Kd após IR e via realavancagem do β), em p.p. */
+  decomposicao?: { viaCustoDivida: number; viaBeta: number };
+  /** Convenção do choque */
+  descricao: string;
 }
 
 export interface WaccMemorialStep {
@@ -84,6 +113,132 @@ export interface WaccMemorialStep {
   resultado: number;
   unidade: string;
   descricao: string;
+}
+
+/**
+ * Converte uma taxa de uma moeda/regime para outra pelo diferencial de inflação (paridade de Fisher):
+ *   (1 + taxa_destino) = (1 + taxa_origem) × (1 + π_destino) / (1 + π_origem)
+ * Todas as taxas em % a.a. Ex.: Rf USD 3,95% com π USD 2% e π BRL 3% → Rf BRL 4,9691%.
+ * Com π_destino = 0 obtém-se a taxa real da moeda de origem.
+ */
+export function ajustarTaxaPorDiferencialInflacao(
+  taxaPct: number,
+  inflacaoOrigemPct: number,
+  inflacaoDestinoPct: number,
+): number {
+  const um = new Decimal(1);
+  return um.plus(new Decimal(taxaPct).div(100))
+    .mul(um.plus(new Decimal(inflacaoDestinoPct).div(100)))
+    .div(um.plus(new Decimal(inflacaoOrigemPct).div(100)))
+    .minus(1)
+    .mul(100)
+    .toNumber();
+}
+
+/** Taxa real (% a.a.) a partir da nominal e da inflação da mesma moeda: (1 + n)/(1 + π) − 1. */
+export function taxaRealDeNominal(taxaNominalPct: number, inflacaoPct: number): number {
+  return ajustarTaxaPorDiferencialInflacao(taxaNominalPct, inflacaoPct, 0);
+}
+
+interface NucleoWacc {
+  V: number;
+  we: number;
+  wd: number;
+  betaAlav: number;
+  Ke: number;   // decimal
+  Kd: number;   // decimal, após IR
+  wacc: number; // decimal
+}
+
+function nucleoWACC(input: WaccInput): NucleoWacc {
+  const {
+    taxaLivreDeRisco: Rf,
+    premioRiscoMercado: ERP,
+    betaDesalavancado: betaDesl,
+    premioRiscoPais: CRP,
+    premioTamanho: SP = 0,
+    marketCap: E,
+    dividaBruta: D,
+    aliquotaIR: T_pct,
+    custoDividaPreTax: Kd_pre,
+  } = input;
+
+  // Normalizar alíquota (34% → 0.34)
+  const T = T_pct / 100;
+
+  // 1. Estrutura de Capital (Market Values)
+  const V = E + D;
+  const we = E / V;  // Peso do Equity
+  const wd = D / V;  // Peso da Dívida
+
+  // 2. Re-alavancagem do Beta (Fórmula de Hamada)
+  // Considera o efeito da alavancagem financeira no risco sistemático
+  const betaAlav = D > 0
+    ? betaDesl * (1 + (1 - T) * (D / E))
+    : betaDesl; // Sem dívida: beta alavancado = desalavancado
+
+  // 3. Custo do Equity (Ke) — CAPM com prêmios Damodaran
+  const Ke = (Rf + betaAlav * ERP + CRP + SP) / 100; // normalizado para decimal
+
+  // 4. Custo da Dívida After-Tax (Kd)
+  const Kd = (Kd_pre / 100) * (1 - T);
+
+  // 5. WACC
+  const wacc = Ke * we + Kd * wd;
+
+  return { V, we, wd, betaAlav, Ke, Kd, wacc };
+}
+
+/**
+ * Sensibilidade do WACC a choques isolados (demais premissas constantes), recalculada pelo motor:
+ *   - Rf, ERP, Kd antes do IR e IR: +1 p.p.;
+ *   - β: +10% (equivale a +10% no β alavancado, pois Hamada é linear em β desalavancado);
+ *   - IR +1 p.p. inclui a realavancagem do β (decomposto em efeito via Kd e via β);
+ *   - D/E: +10% (relativo), mantendo V = E + D constante e Kd inalterado.
+ * Resultados em pontos percentuais do WACC.
+ */
+export function calcularSensibilidadeWACC(input: WaccInput): WaccSensibilidadeItem[] {
+  const base = nucleoWACC(input);
+  const baseFinita = Number.isFinite(base.wacc);
+  const delta = (n: NucleoWacc) => (baseFinita && Number.isFinite(n.wacc) ? (n.wacc - base.wacc) * 100 : null);
+  const chocado = (n: NucleoWacc) => (baseFinita && Number.isFinite(n.wacc) ? n.wacc * 100 : null);
+  const item = (
+    id: WaccPremissaSensibilidade,
+    premissa: string,
+    choque: string,
+    descricao: string,
+    n: NucleoWacc,
+  ): WaccSensibilidadeItem => ({ id, premissa, choque, waccChocado: chocado(n), deltaWaccPP: delta(n), descricao });
+
+  const rf = nucleoWACC({ ...input, taxaLivreDeRisco: input.taxaLivreDeRisco + 1 });
+  const erp = nucleoWACC({ ...input, premioRiscoMercado: input.premioRiscoMercado + 1 });
+  const beta = nucleoWACC({ ...input, betaDesalavancado: input.betaDesalavancado * 1.1 });
+  const kd = nucleoWACC({ ...input, custoDividaPreTax: input.custoDividaPreTax + 1 });
+  const ir = nucleoWACC({ ...input, aliquotaIR: input.aliquotaIR + 1 });
+
+  // D/E +10% com V constante
+  const V = input.marketCap + input.dividaBruta;
+  const deChocado = (input.dividaBruta / input.marketCap) * 1.1;
+  const eChocado = V / (1 + deChocado);
+  const de = nucleoWACC({ ...input, marketCap: eChocado, dividaBruta: V - eChocado });
+
+  const itemIR = item('ir', 'Alíquota de IR', '+1 p.p.',
+    'Reduz o Kd após IR e realavanca o β (Hamada) com a nova alíquota.', ir);
+  const deltaIR = itemIR.deltaWaccPP;
+  if (deltaIR !== null) {
+    // Efeito via Kd: Wd × ΔKd_após_IR; o restante vem da realavancagem do β (Ke × We)
+    const viaCustoDivida = base.wd * (ir.Kd - base.Kd) * 100;
+    itemIR.decomposicao = { viaCustoDivida, viaBeta: deltaIR - viaCustoDivida };
+  }
+
+  return [
+    item('rf', 'Taxa livre de risco (Rf)', '+1 p.p.', 'Ke sobe 1 p.p.; efeito no WACC = We × 1 p.p.', rf),
+    item('beta', 'Beta (β)', '+10%', 'β desalavancado × 1,10 (β alavancado sobe 10%); efeito = We × 0,1 × β_alav × ERP.', beta),
+    item('erp', 'Prêmio de risco de mercado (ERP)', '+1 p.p.', 'Ke sobe β_alav × 1 p.p.; efeito = We × β_alav × 1 p.p.', erp),
+    item('kd', 'Custo da dívida antes do IR (Kd)', '+1 p.p.', 'Kd após IR sobe (1 − T) × 1 p.p.; efeito = Wd × (1 − T) × 1 p.p.', kd),
+    itemIR,
+    item('de', 'Alavancagem (D/E)', '+10%', 'D/E × 1,10 com V = E + D constante e Kd inalterado; realavanca o β e muda os pesos.', de),
+  ];
 }
 
 /**
@@ -103,30 +258,12 @@ export function calcularWACC(input: WaccInput): WaccResult {
     custoDividaPreTax: Kd_pre,
   } = input;
 
-  // Normalizar alíquota (34% → 0.34)
-  const T = T_pct / 100;
-
   // 1. Estrutura de Capital (Market Values)
   const V = E + D;
   if (V <= 0) throw new Error('O valor total da firma (Equity + Dívida) deve ser positivo.');
 
-  const we = E / V;  // Peso do Equity
-  const wd = D / V;  // Peso da Dívida
-
-  // 2. Re-alavancagem do Beta (Fórmula de Hamada)
-  // Considera o efeito da alavancagem financeira no risco sistemático
-  const betaAlav = D > 0
-    ? betaDesl * (1 + (1 - T) * (D / E))
-    : betaDesl; // Sem dívida: beta alavancado = desalavancado
-
-  // 3. Custo do Equity (Ke) — CAPM com prêmios Damodaran
-  const Ke = (Rf + betaAlav * ERP + CRP + SP) / 100; // normalizado para decimal
-
-  // 4. Custo da Dívida After-Tax (Kd)
-  const Kd = (Kd_pre / 100) * (1 - T);
-
-  // 5. WACC
-  const wacc = Ke * we + Kd * wd;
+  // 2–5. Pesos, β realavancado (Hamada), Ke, Kd após IR e WACC
+  const { we, wd, betaAlav, Ke, Kd, wacc } = nucleoWACC(input);
 
   // Memorial de cálculo
   const fmt = (v: number, casas = 2) => v.toFixed(casas).replace('.', ',');
@@ -201,6 +338,7 @@ export function calcularWACC(input: WaccInput): WaccResult {
     custoEquity: Ke * 100,
     custoDividaAfterTax: Kd * 100,
     wacc: wacc * 100,
+    sensibilidade: calcularSensibilidadeWACC(input),
     memorial,
   };
 }

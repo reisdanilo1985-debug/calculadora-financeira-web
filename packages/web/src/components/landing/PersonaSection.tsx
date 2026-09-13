@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowRight, Briefcase, FileSpreadsheet, Scale } from 'lucide-react';
 import { useInView } from '@/hooks/useInView';
+import { CALCULADORES } from '@/components/tesouraria/calcConfig';
 
 const PERSONAS = [
   {
@@ -23,7 +24,7 @@ const PERSONAS = [
     title: 'Tesoureiros e CFOs',
     subtitle: 'A mesa de operações completa',
     bullets: [
-      '13 calculadoras: swap, duration, PU de títulos, NDF',
+      `${CALCULADORES.length} calculadoras: swap, duration, preço de títulos, dólar a termo`,
       'Curvas DI e cupom cambial com premissas ao vivo',
       'WACC com betas setoriais Damodaran (NYU Stern)',
       'Hedge cambial com PTAX oficial e paridade coberta',

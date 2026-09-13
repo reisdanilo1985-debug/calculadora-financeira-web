@@ -10,6 +10,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { formatCurrency } from '@/lib/utils';
+import { hojeISO, somarMesesISO } from '@/lib/datas';
+import { toAnnual, RateMode } from '@/lib/rateConversion';
 import { FuturePremise } from '@/components/calculator/FuturePremisesModal';
 import { ComparadorPremisesModal, ScenarioPremisesInfo } from './ComparadorPremisesModal';
 
@@ -35,19 +37,100 @@ const SCENARIO_COLORS = [
   '#06b6d4', // cyan
 ];
 
-const DEFAULT_SCENARIOS: CompareScenarioInput[] = [
-  { label: 'CDI 100%',      indexType: 'CDI',       dayCountBasis: 252 },
-  { label: 'IPCA',          indexType: 'IPCA',      dayCountBasis: 365 },
-  { label: 'Pré-fixada 10%', indexType: 'PREFIXADA', dayCountBasis: 365, prefixedRate: 10 },
+const DAILY_BR_INDICES = ['CDI', 'SELIC_OVER', 'SELIC_META'];
+const MONTHLY_INDICES = ['IPCA', 'IGPM', 'INCC'];
+
+/**
+ * Cenário no formulário. Os campos de composição guardam o que o usuário digitou
+ * (ex.: 1 % a.m.); o spread enviado à API é montado por toApiScenario.
+ */
+interface ScenarioState extends Omit<CompareScenarioInput, 'spread' | 'futurePremises'> {
+  /** '% do índice' (padrão) ou 'Índice + spread' */
+  composition: 'percentage' | 'additive';
+  /** % do índice (ex.: 110) ou taxa do spread, na unidade de spreadRateMode */
+  compositionValue?: number;
+  spreadRateMode: RateMode;
+  /** O nome segue os parâmetros até o usuário editá-lo */
+  autoLabel: boolean;
+}
+
+const newScenario = (s: Partial<ScenarioState> & Pick<ScenarioState, 'label' | 'indexType' | 'dayCountBasis'>): ScenarioState => ({
+  composition: 'percentage',
+  spreadRateMode: 'aa',
+  autoLabel: true,
+  ...s,
+});
+
+const DEFAULT_SCENARIOS: ScenarioState[] = [
+  newScenario({ label: 'CDI 100%',       indexType: 'CDI',       dayCountBasis: 252 }),
+  newScenario({ label: 'IPCA',           indexType: 'IPCA',      dayCountBasis: 365 }),
+  newScenario({ label: 'Pré-fixada 10%', indexType: 'PREFIXADA', dayCountBasis: 365, prefixedRate: 10 }),
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function defaultLabel(indexType: string, prefixedRate?: number, spread?: CompareScenarioInput['spread']): string {
-  if (indexType === 'PREFIXADA') return `Pré-fixada ${prefixedRate ?? 10}%`;
-  if (spread?.mode === 'percentage') return `${indexType} ${spread.value}%`;
-  if (spread?.mode === 'additive') return `${indexType} + ${spread.value}%`;
-  return indexType;
+const fmtTaxa = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+
+const COMPOSITION_OPTIONS: { value: ScenarioState['composition']; label: string }[] = [
+  { value: 'percentage', label: '% do índice' },
+  { value: 'additive',   label: 'Índice + spread' },
+];
+
+/** SOFR: spread somado à taxa ACT/360, só em % a.a. */
+const spreadAllowsMonthly = (indexType: string) => indexType !== 'SOFR';
+
+const spreadUnit = (s: ScenarioState) =>
+  s.spreadRateMode === 'am' && spreadAllowsMonthly(s.indexType) ? '% a.m.' : '% a.a.';
+
+function spreadTooltip(indexType: string): string {
+  if (DAILY_BR_INDICES.includes(indexType)) {
+    return 'Taxa somada ao índice pelo Fator de Spread B3: capitalizada por dia útil (base 252). Taxa ao mês é convertida na equivalente ao ano, composta.';
+  }
+  if (MONTHLY_INDICES.includes(indexType)) {
+    return 'Taxa somada ao índice e composta em cada mês. Ao mês: cada mês cheio rende a taxa mensal exata (30/360). Ao ano: proporcional aos dias corridos (365).';
+  }
+  return 'Taxa somada à SOFR, em % a.a. (ACT/360).';
+}
+
+function defaultLabel(s: ScenarioState): string {
+  if (s.indexType === 'PREFIXADA') return `Pré-fixada ${s.prefixedRate ?? 10}%`;
+  const v = s.compositionValue;
+  if (v === undefined || !Number.isFinite(v)) return s.indexType;
+  if (s.composition === 'percentage') return v === 100 ? s.indexType : `${s.indexType} ${fmtTaxa(v)}%`;
+  if (v === 0) return s.indexType;
+  const unidade = s.spreadRateMode === 'am' && spreadAllowsMonthly(s.indexType) ? 'a.m.' : 'a.a.';
+  return `${s.indexType} ${v < 0 ? '−' : '+'} ${fmtTaxa(Math.abs(v))}% ${unidade}`;
+}
+
+/**
+ * Spread no formato da API (sempre % a.a.):
+ * - CDI/Selic: taxa a.m. convertida em a.a. composta; Fator de Spread B3 por dia útil (252).
+ * - IPCA/IGP-M/INCC: a.m. vai como a.a. equivalente em 30E/360 (mês fechado = taxa mensal exata);
+ *   a.a. segue dias corridos/365.
+ * - SOFR: taxa a.a. somada à SOFR (ACT/360).
+ */
+function toApiSpread(s: ScenarioState): CompareScenarioInput['spread'] {
+  const v = s.compositionValue;
+  if (s.indexType === 'PREFIXADA' || v === undefined || !Number.isFinite(v)) return undefined;
+  if (s.composition === 'percentage') return v === 100 ? undefined : { mode: 'percentage', value: v };
+  if (v === 0) return undefined;
+  const mode: RateMode = spreadAllowsMonthly(s.indexType) ? s.spreadRateMode : 'aa';
+  const value = toAnnual(v, mode);
+  if (DAILY_BR_INDICES.includes(s.indexType)) return { mode: 'additive', value, additiveBase: 252 };
+  if (MONTHLY_INDICES.includes(s.indexType)) {
+    return { mode: 'additive', value, additiveBase: mode === 'am' ? 360 : undefined };
+  }
+  return { mode: 'additive', value };
+}
+
+function toApiScenario(s: ScenarioState): CompareScenarioInput {
+  return {
+    label: s.label,
+    indexType: s.indexType,
+    dayCountBasis: s.dayCountBasis,
+    prefixedRate: s.prefixedRate,
+    spread: toApiSpread(s),
+  };
 }
 
 // ── Componente Principal ──────────────────────────────────────────────────────
@@ -59,13 +142,14 @@ interface ComparadorFormProps {
 export const SCENARIO_COLORS_EXPORT = SCENARIO_COLORS;
 
 export function ComparadorForm({ onResult }: ComparadorFormProps) {
-  const today = new Date().toISOString().slice(0, 10);
-  const oneYearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  // Datas pelo relógio local (toISOString daria a data UTC: "amanhã" à noite no Brasil)
+  const today = hojeISO();
+  const oneYearAgo = somarMesesISO(today, -12);
 
   const [initialAmount, setInitialAmount] = useState<number>(100000);
   const [startDate, setStartDate] = useState(oneYearAgo);
   const [endDate, setEndDate] = useState(today);
-  const [scenarios, setScenarios] = useState<CompareScenarioInput[]>(DEFAULT_SCENARIOS);
+  const [scenarios, setScenarios] = useState<ScenarioState[]>(DEFAULT_SCENARIOS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [premisesModal, setPremisesModal] = useState(false);
@@ -75,25 +159,21 @@ export function ComparadorForm({ onResult }: ComparadorFormProps) {
 
   const addScenario = () => {
     if (scenarios.length >= 6) return;
-    setScenarios(prev => [...prev, { label: 'CDI', indexType: 'CDI', dayCountBasis: 252 }]);
+    setScenarios(prev => [...prev, newScenario({ label: 'CDI', indexType: 'CDI', dayCountBasis: 252 })]);
   };
 
   const removeScenario = (idx: number) => {
     setScenarios(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const updateScenario = (idx: number, patch: Partial<CompareScenarioInput>) => {
+  const updateScenario = (idx: number, patch: Partial<ScenarioState>) => {
     setScenarios(prev => prev.map((s, i) => {
       if (i !== idx) return s;
       const updated = { ...s, ...patch };
-      // Auto-update label if it was auto-generated
-      const autoLabel = defaultLabel(s.indexType, s.prefixedRate, s.spread);
-      if (s.label === autoLabel || !s.label) {
-        updated.label = defaultLabel(
-          updated.indexType ?? s.indexType,
-          updated.prefixedRate ?? s.prefixedRate,
-          updated.spread ?? s.spread
-        );
+      // Nome gerado automaticamente acompanha os parâmetros até o usuário editá-lo
+      if (!('label' in patch) && (updated.autoLabel || !updated.label)) {
+        updated.label = defaultLabel(updated);
+        updated.autoLabel = true;
       }
       return updated;
     }));
@@ -102,7 +182,7 @@ export function ComparadorForm({ onResult }: ComparadorFormProps) {
   const handleIndexChange = (idx: number, indexType: string) => {
     const opt = INDEX_OPTIONS.find(o => o.value === indexType);
     const basis = opt?.basis ?? 365;
-    updateScenario(idx, { indexType, dayCountBasis: basis, prefixedRate: undefined, spread: undefined });
+    updateScenario(idx, { indexType, dayCountBasis: basis, prefixedRate: undefined, compositionValue: undefined });
   };
 
   const validate = (): string | null => {
@@ -120,8 +200,8 @@ export function ComparadorForm({ onResult }: ComparadorFormProps) {
 
   const buildRequest = (scenariosToUse: CompareScenarioInput[]): CompareRequest => ({
     initialAmount,
-    startDate: new Date(startDate + 'T12:00:00').toISOString(),
-    endDate: new Date(endDate + 'T12:00:00').toISOString(),
+    startDate: startDate + 'T12:00:00',
+    endDate: endDate + 'T12:00:00',
     scenarios: scenariosToUse,
   });
 
@@ -133,7 +213,7 @@ export function ComparadorForm({ onResult }: ComparadorFormProps) {
     setError(null);
 
     try {
-      const result = await runComparison(buildRequest(scenarios));
+      const result = await runComparison(buildRequest(scenarios.map(toApiScenario)));
 
       const needPremises = result.scenarios.filter(
         s => s.error === 'Premissas futuras necessárias' && s.premisesRequiredFrom
@@ -169,14 +249,14 @@ export function ComparadorForm({ onResult }: ComparadorFormProps) {
     setLoading(true);
     setError(null);
 
-    const scenariosWithPremises = scenarios.map(s => {
+    const scenariosWithPremises = scenarios.map(toApiScenario).map(s => {
       const pending = pendingPremises.find(p => p.label === s.label);
       if (!pending) return s;
       return {
         ...s,
         futurePremises: pending.premises.map(p => ({
-          startDate: new Date(p.startDate + 'T12:00:00').toISOString(),
-          endDate: new Date(p.endDate + 'T12:00:00').toISOString(),
+          startDate: p.startDate + 'T12:00:00',
+          endDate: p.endDate + 'T12:00:00',
           rate: p.rate,
         })),
       };
@@ -240,11 +320,11 @@ export function ComparadorForm({ onResult }: ComparadorFormProps) {
           {/* Atalhos de período */}
           <div className="flex gap-1.5 flex-wrap">
             {[
-              { label: 'YTD', start: `${new Date().getFullYear()}-01-01`, end: today },
-              { label: '12M', start: new Date(Date.now() - 365*24*60*60*1000).toISOString().slice(0,10), end: today },
-              { label: '24M', start: new Date(Date.now() - 2*365*24*60*60*1000).toISOString().slice(0,10), end: today },
-              { label: '36M', start: new Date(Date.now() - 3*365*24*60*60*1000).toISOString().slice(0,10), end: today },
-              { label: '60M', start: new Date(Date.now() - 5*365*24*60*60*1000).toISOString().slice(0,10), end: today },
+              { label: 'YTD', start: `${today.slice(0, 4)}-01-01`, end: today },
+              { label: '12M', start: somarMesesISO(today, -12), end: today },
+              { label: '24M', start: somarMesesISO(today, -24), end: today },
+              { label: '36M', start: somarMesesISO(today, -36), end: today },
+              { label: '60M', start: somarMesesISO(today, -60), end: today },
             ].map(({ label, start, end }) => (
               <button
                 key={label}
@@ -294,7 +374,7 @@ export function ComparadorForm({ onResult }: ComparadorFormProps) {
                 <Input
                   className="h-7 text-xs font-medium flex-1 bg-transparent border-0 border-b border-white/10 rounded-none px-0 focus-visible:ring-0"
                   value={scenario.label}
-                  onChange={e => updateScenario(idx, { label: e.target.value })}
+                  onChange={e => updateScenario(idx, { label: e.target.value, autoLabel: false })}
                   placeholder="Nome do cenário"
                 />
                 {scenarios.length > 2 && (
@@ -336,24 +416,71 @@ export function ComparadorForm({ onResult }: ComparadorFormProps) {
                   </div>
                 ) : (
                   <div className="space-y-1">
-                    <Label className="text-[10px]" title="Percentual aplicado sobre o índice ANTES da capitalização diária (ex.: 110 = 110% do CDI). Diferente de somar um spread: 110% do CDI fica mais caro quando o CDI sobe.">% do índice ⓘ</Label>
+                    {scenario.composition === 'percentage' ? (
+                      <Label className="text-[10px]" title="Percentual aplicado sobre o índice ANTES da capitalização diária (ex.: 110 = 110% do CDI). Diferente de somar um spread: 110% do CDI fica mais caro quando o CDI sobe.">% do índice ⓘ</Label>
+                    ) : (
+                      <Label className="text-[10px]" title={spreadTooltip(scenario.indexType)}>
+                        Spread ({spreadUnit(scenario)}) ⓘ
+                      </Label>
+                    )}
                     <Input
                       type="number"
                       className="h-8 text-xs"
-                      placeholder="100"
-                      value={scenario.spread?.mode === 'percentage' ? scenario.spread.value : ''}
+                      placeholder={scenario.composition === 'percentage' ? '100' : spreadUnit(scenario) === '% a.m.' ? 'ex: 1' : 'ex: 6'}
+                      value={scenario.compositionValue ?? ''}
                       onChange={e => {
                         const v = parseFloat(e.target.value);
-                        updateScenario(idx, {
-                          spread: isNaN(v) || v === 100
-                            ? undefined
-                            : { mode: 'percentage', value: v },
-                        });
+                        updateScenario(idx, { compositionValue: Number.isFinite(v) ? v : undefined });
                       }}
                     />
                   </div>
                 )}
               </div>
+
+              {scenario.indexType !== 'PREFIXADA' && (
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex gap-1.5">
+                    {COMPOSITION_OPTIONS.map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        aria-pressed={scenario.composition === opt.value}
+                        onClick={() => {
+                          if (scenario.composition !== opt.value) {
+                            updateScenario(idx, { composition: opt.value, compositionValue: undefined });
+                          }
+                        }}
+                        className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                          scenario.composition === opt.value
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border/50 text-muted-foreground hover:border-border hover:text-foreground'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  {scenario.composition === 'additive' && spreadAllowsMonthly(scenario.indexType) && (
+                    <div className="inline-flex rounded border border-border/50 overflow-hidden" role="group" aria-label="Unidade da taxa do spread">
+                      {(['aa', 'am'] as const).map(m => (
+                        <button
+                          key={m}
+                          type="button"
+                          aria-pressed={scenario.spreadRateMode === m}
+                          onClick={() => updateScenario(idx, { spreadRateMode: m })}
+                          className={`text-[10px] px-2 py-0.5 transition-colors ${
+                            scenario.spreadRateMode === m
+                              ? 'bg-primary/10 text-primary'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          {m === 'aa' ? 'a.a.' : 'a.m.'}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

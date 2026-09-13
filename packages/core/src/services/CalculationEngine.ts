@@ -14,6 +14,9 @@ import {
   InterestType,
   Currency,
   GracePeriodType,
+  AmortizationSystem,
+  FullFlowResult,
+  FullFlowSystemSummary,
 } from '../models/types';
 import { calculateCDI } from '../engines/CDIEngine';
 import { calculateMonthlyIndex } from '../engines/MonthlyIndexEngine';
@@ -24,9 +27,11 @@ import { calculateFullFlow } from '../engines/FullFlowEngine';
 import {
   applyAmortizations,
   calcTotalAmortized,
+  calcTotalContributed,
   expandPeriodicAmortizations,
 } from './AmortizationService';
 import { applyGracePeriod } from './GracePeriodService';
+import { isBusinessDay } from '../utils/businessDays';
 import { applyInterest } from './InterestService';
 
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP });
@@ -43,6 +48,16 @@ const ENGINE_MAP: Record<IndexType, EngineFunction> = {
   [IndexType.SOFR]: calculateSOFR,
   [IndexType.PREFIXADA]: calculatePrefixed,
 };
+
+/**
+ * Engines cujas linhas são datadas no FIM do intervalo de acúmulo (segmentos
+ * mensais). Os demais datam a linha no início do acúmulo do dia.
+ */
+const ROWS_DATED_AT_ACCRUAL_END = new Set<IndexType>([
+  IndexType.IPCA,
+  IndexType.IGPM,
+  IndexType.INCC,
+]);
 
 function validateInput(input: CalculationInput): void {
   if (!input.initialAmount || input.initialAmount <= 0) {
@@ -187,6 +202,7 @@ function calculateDCFWrapper(input: CalculationInput): CalculationResult {
     referenceDate: refDate,
     dayCountBasis: input.dayCountBasis,
     currency,
+    perpetuity: input.perpetuity,
   });
 
   // Memória de cálculo para compatibilidade com gráfico/tabela
@@ -199,20 +215,35 @@ function calculateDCFWrapper(input: CalculationInput): CalculationResult {
     isProjected: false,
     description: `Nominal: ${f.nominalAmount.toFixed(2)} | VP: ${f.pv.toFixed(2)} | ${(f.contributionPercent).toFixed(1)}%`,
   }));
+  const tv = dcfResult.terminalValue;
+  if (tv) {
+    memoryRows.push({
+      date: tv.date,
+      indexRate: input.discountRate!,
+      dailyFactor: tv.discountFactor,
+      accumulatedFactor: tv.discountFactor,
+      balance: tv.pv,
+      isProjected: false,
+      description: `Perpetuidade (g ${tv.growthRate}% a.a.) | VT: ${tv.nominalValue.toFixed(2)} | VP: ${tv.pv.toFixed(2)} | ${tv.contributionPercent.toFixed(1)}%`,
+    });
+  }
 
   const totalNominal = dcfResult.totalNominal;
+  // Fator e variação comparam o VP dos fluxos explícitos com o nominal deles (sem o valor terminal)
+  const explicitPV = dcfResult.explicitPV;
 
   return {
     initialAmount: totalNominal,
     finalAmount: dcfResult.totalPV,
-    accumulatedFactor: totalNominal > 0 ? dcfResult.totalPV / totalNominal : 0,
+    accumulatedFactor: totalNominal > 0 ? explicitPV / totalNominal : 0,
     variationPercent:
-      totalNominal > 0 ? (dcfResult.totalPV / totalNominal - 1) * 100 : 0,
+      totalNominal > 0 ? (explicitPV / totalNominal - 1) * 100 : 0,
     startDate: refDate,
     endDate: input.endDate,
     indexType: input.indexType,
     dayCountBasis: input.dayCountBasis,
     totalAmortized: 0,
+    totalContributed: 0,
     memoryRows,
     hasProjections: false,
     thesisType: ThesisType.VALOR_PRESENTE,
@@ -235,15 +266,33 @@ function calculateFullFlowWrapper(input: CalculationInput): CalculationResult {
 
   const currency = input.currency ?? Currency.BRL;
 
-  const fullFlowResult = calculateFullFlow({
+  const params = {
     principal: input.initialAmount,
     startDate: input.startDate,
     numberOfPeriods: input.numberOfPeriods,
     annualRate: input.remunerationRate,
-    amortizationSystem: input.amortizationSystem,
     currency,
     gracePeriod: input.gracePeriod,
-  });
+    periodicity: input.installmentPeriodicity,
+  };
+  const fullFlowResult = calculateFullFlow({ ...params, amortizationSystem: input.amortizationSystem });
+
+  // Comparação lado a lado: mesmo principal, taxa, prazo e carência nos três sistemas
+  const resumo = (r: FullFlowResult): FullFlowSystemSummary => {
+    const primeira = r.rows.find(row => !row.isGracePeriod) ?? r.rows[0];
+    return {
+      system: r.amortizationSystem,
+      firstPayment: primeira?.totalPayment ?? 0,
+      lastPayment: r.rows[r.rows.length - 1]?.totalPayment ?? 0,
+      totalInterest: r.totalInterest,
+      totalPayments: r.totalPayments,
+    };
+  };
+  fullFlowResult.comparison = [AmortizationSystem.SAC, AmortizationSystem.PRICE, AmortizationSystem.BULLET].map(sistema =>
+    resumo(sistema === input.amortizationSystem
+      ? fullFlowResult
+      : calculateFullFlow({ ...params, amortizationSystem: sistema }))
+  );
 
   // Converte para memória padrão para compatibilidade com gráfico
   const memoryRows: CalculationMemoryRow[] = fullFlowResult.rows.map(row => ({
@@ -269,6 +318,7 @@ function calculateFullFlowWrapper(input: CalculationInput): CalculationResult {
     indexType: input.indexType,
     dayCountBasis: input.dayCountBasis,
     totalAmortized: fullFlowResult.totalAmortized,
+    totalContributed: 0,
     memoryRows,
     hasProjections: false,
     thesisType: ThesisType.FLUXO_COMPLETO,
@@ -312,10 +362,38 @@ export function calculate(input: CalculationInput): CalculationResult {
     return d;
   });
 
-  let rows = engine({ ...input, splitDates });
+  const rowsDatedAtAccrualEnd = ROWS_DATED_AT_ACCRUAL_END.has(input.indexType);
+
+  // Índices mensais: o término da carência precisa de uma linha própria para
+  // que o mês parcial antes do término fique dentro da carência.
+  const engineSplitDates = [...splitDates];
+  if (thesis === ThesisType.CORRECAO_COM_CARENCIA && input.gracePeriod && rowsDatedAtAccrualEnd) {
+    const graceEnd = new Date(input.gracePeriod.endDate);
+    graceEnd.setHours(0, 0, 0, 0);
+    engineSplitDates.push(graceEnd);
+  }
+
+  let rows = engine({ ...input, splitDates: engineSplitDates });
 
   if (rows.length === 0) {
     throw new Error('Nenhum dado de índice disponível para o período informado.');
+  }
+
+  // T5 – aplica juros remuneratórios (simples ou compostos) sobre a correção.
+  // Antes das âncoras: o intervalo de cada linha vai até a próxima linha do
+  // engine (ou a data final), e a âncora copia o saldo já com juros.
+  if (thesis === ThesisType.CORRECAO_COM_JUROS && input.interestRate && input.interestRate > 0) {
+    const interestType = input.interestType ?? InterestType.COMPOSTA;
+    rows = applyInterest(
+      rows,
+      input.initialAmount,
+      input.interestRate,
+      interestType,
+      input.startDate,
+      input.dayCountBasis,
+      input.endDate,
+      rowsDatedAtAccrualEnd
+    );
   }
 
   // Garante que toda data de amortização tenha uma linha exata. Para engines
@@ -328,23 +406,10 @@ export function calculate(input: CalculationInput): CalculationResult {
     rows = insertAnchorRows(rows, splitDates);
   }
 
-  // T5 – aplica juros remuneratórios (simples ou compostos) sobre a correção
-  if (thesis === ThesisType.CORRECAO_COM_JUROS && input.interestRate && input.interestRate > 0) {
-    const interestType = input.interestType ?? InterestType.COMPOSTA;
-    rows = applyInterest(
-      rows,
-      input.initialAmount,
-      input.interestRate,
-      interestType,
-      input.startDate,
-      input.dayCountBasis
-    );
-  }
-
   // T3 – aplica carência
   let gracePeriodInfo = undefined;
   if (thesis === ThesisType.CORRECAO_COM_CARENCIA && input.gracePeriod) {
-    const gpResult = applyGracePeriod(rows, input.initialAmount, input.gracePeriod);
+    const gpResult = applyGracePeriod(rows, input.initialAmount, input.gracePeriod, rowsDatedAtAccrualEnd);
     rows = gpResult.rows;
     gracePeriodInfo = {
       type: input.gracePeriod.type,
@@ -356,7 +421,7 @@ export function calculate(input: CalculationInput): CalculationResult {
 
   // Aplica amortizações (já expandidas acima)
   if (expandedAmorts.length > 0) {
-    rows = applyAmortizations(rows, expandedAmorts);
+    rows = applyAmortizations(rows, expandedAmorts, rowsDatedAtAccrualEnd);
   }
 
   const lastRow = rows[rows.length - 1];
@@ -367,6 +432,7 @@ export function calculate(input: CalculationInput): CalculationResult {
 
   const { hasProjections, projectionStartDate } = detectProjections(rows);
   const totalAmortized = calcTotalAmortized(rows);
+  const totalContributed = calcTotalContributed(rows);
 
   return {
     initialAmount: input.initialAmount,
@@ -378,6 +444,7 @@ export function calculate(input: CalculationInput): CalculationResult {
     indexType: input.indexType,
     dayCountBasis: input.dayCountBasis,
     totalAmortized,
+    totalContributed,
     memoryRows: rows,
     hasProjections,
     projectionStartDate,
@@ -387,24 +454,67 @@ export function calculate(input: CalculationInput): CalculationResult {
   };
 }
 
+/**
+ * Data a partir da qual o período precisa de premissas (null = dados cobrem o período).
+ *
+ * A cobertura depende da natureza da série:
+ * - índices mensais (IPCA/IGP-M/INCC): por competência — a observação datada no
+ *   dia 1 cobre o mês inteiro; exige premissa a partir do dia 1 do primeiro mês
+ *   sem observação;
+ * - CDI/Selic: por dia útil — fins de semana e feriados após o último dado não
+ *   exigem premissa;
+ * - SOFR: até 4 dias corridos após a última publicação (fim de semana prolongado);
+ * - demais: por dia corrido.
+ *
+ * Sem `indexType`, uma série em que todas as observações caem no dia 1 é tratada
+ * como mensal.
+ */
 export function getPremisesRequiredFrom(
   endDate: Date,
-  indexData: { date: Date }[]
+  indexData: { date: Date }[],
+  indexType?: IndexType | string
 ): Date | null {
   if (!indexData.length) return new Date();
 
-  const lastDataDate = indexData.reduce(
+  const lastDataDate = new Date(indexData.reduce(
     (max, d) => (d.date > max ? d.date : max),
     indexData[0].date
-  );
+  ));
+  lastDataDate.setHours(0, 0, 0, 0);
 
   // endDate é exclusiva nos cálculos (getBusinessDaysBetween e buildMonthSegments
   // iteram `while (current < endDate)`), portanto o último dia efetivamente
-  // calculado é endDate - 1. Premissas só são necessárias se (endDate - 1) > lastDataDate.
-  const lastNeededDate = new Date(endDate);
+  // calculado é endDate - 1.
+  const end = new Date(endDate);
+  end.setHours(0, 0, 0, 0);
+  const lastNeededDate = new Date(end);
   lastNeededDate.setDate(lastNeededDate.getDate() - 1);
 
-  if (lastNeededDate <= lastDataDate) return null;
+  const isMonthly = indexType
+    ? ROWS_DATED_AT_ACCRUAL_END.has(indexType as IndexType)
+    : indexData.every(p => new Date(p.date).getDate() === 1);
+
+  if (isMonthly) {
+    const lastMonth = lastDataDate.getFullYear() * 12 + lastDataDate.getMonth();
+    const neededMonth = lastNeededDate.getFullYear() * 12 + lastNeededDate.getMonth();
+    if (neededMonth <= lastMonth) return null;
+    return new Date(lastDataDate.getFullYear(), lastDataDate.getMonth() + 1, 1);
+  }
+
+  if (indexType === IndexType.CDI || indexType === IndexType.SELIC_META || indexType === IndexType.SELIC_OVER) {
+    const nextBusinessDay = new Date(lastDataDate);
+    do {
+      nextBusinessDay.setDate(nextBusinessDay.getDate() + 1);
+    } while (!isBusinessDay(nextBusinessDay));
+    return nextBusinessDay < end ? nextBusinessDay : null;
+  }
+
+  if (indexType === IndexType.SOFR) {
+    const staleDays = Math.round((lastNeededDate.getTime() - lastDataDate.getTime()) / 86400000);
+    if (staleDays <= 4) return null;
+  } else if (lastNeededDate <= lastDataDate) {
+    return null;
+  }
 
   const nextDay = new Date(lastDataDate);
   nextDay.setDate(nextDay.getDate() + 1);

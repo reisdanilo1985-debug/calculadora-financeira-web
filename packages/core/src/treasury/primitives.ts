@@ -83,6 +83,106 @@ export function efetivaParaNominal(iaa: number, m: number): number {
   return D(1).plus(iaa).pow(D(1).div(m)).minus(1).mul(m).toNumber();
 }
 
+// ──────────── % do CDI — convenção B3 (percentual sobre a taxa DI DIÁRIA) ────────────
+//
+// Caderno de Fórmulas B3 (CDB/DI): Fator DI = Π (1 + TDI·p), com
+// TDI = (1 + DI)^(1/252) − 1. É a mesma convenção do CDIEngine da Calculadora.
+// Com CDI constante a conversão abaixo é exata (ida e volta perfeita); a razão
+// anual "pré ÷ CDI" é só uma aproximação de mesa e não é usada aqui.
+
+/** TDI = (1 + CDI)^(1/252) − 1 — taxa DI diária implícita na taxa anual base 252. */
+export function taxaDiDiaria(cdiAa: Decimal.Value): Decimal {
+  const base = D(1).plus(cdiAa);
+  if (!base.gt(0)) throw new Error('taxaDiDiaria: CDI deve ser maior que −100%.');
+  return base.pow(D(1).div(252)).minus(1);
+}
+
+/** % do CDI (B3) equivalente a uma taxa a.a. base 252: p = [(1 + taxa)^(1/252) − 1] / TDI. */
+export function pctCdiB3(taxaAa: Decimal.Value, cdiAa: Decimal.Value): Decimal {
+  const tdi = taxaDiDiaria(cdiAa);
+  if (tdi.isZero()) throw new Error('pctCdiB3: CDI deve ser diferente de zero.');
+  const base = D(1).plus(taxaAa);
+  if (!base.gt(0)) throw new Error('pctCdiB3: a taxa deve ser maior que −100%.');
+  return base.pow(D(1).div(252)).minus(1).div(tdi);
+}
+
+/** Taxa a.a. base 252 do acúmulo diário a p% do CDI (B3): (1 + p·TDI)^252 − 1. */
+export function taxaDePctCdiB3(pct: Decimal.Value, cdiAa: Decimal.Value): Decimal {
+  const fatorDiario = D(1).plus(taxaDiDiaria(cdiAa).mul(pct));
+  if (!fatorDiario.gt(0)) {
+    throw new Error('taxaDePctCdiB3: o fator diário 1 + p·TDI deve ser positivo.');
+  }
+  return fatorDiario.pow(252).minus(1);
+}
+
+// ───────────────────────── Datas civis (fronteira da API) ─────────────────────────
+//
+// `new Date('2026-03-01')` é meia-noite UTC: num servidor em São Paulo vira
+// 28/02 21h e o 30/360 (que lê getDate/getMonth locais) conta um dia errado.
+// Os calculadores trabalham com Date à meia-noite LOCAL; estas funções levam a
+// entrada textual para essa forma sem depender do fuso do servidor.
+
+/** Fuso de referência das datas civis da aplicação. */
+export const FUSO_BR = 'America/Sao_Paulo';
+
+/** Date à meia-noite local de uma data civil; null se a data não existe (ex.: 31/02). */
+function dataCivilLocal(ano: number, mes: number, dia: number): Date | null {
+  const dt = new Date(2000, 0, 1);
+  dt.setFullYear(ano, mes - 1, dia);
+  dt.setHours(0, 0, 0, 0);
+  if (dt.getFullYear() !== ano || dt.getMonth() !== mes - 1 || dt.getDate() !== dia) return null;
+  return dt;
+}
+
+/** Componentes (ano, mês, dia) da data civil de um instante no fuso dado. */
+function componentesNoFuso(instante: Date, timeZone: string): { ano: number; mes: number; dia: number } {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(instante);
+  const valor = (tipo: string) => Number(partes.find(p => p.type === tipo)?.value);
+  return { ano: valor('year'), mes: valor('month'), dia: valor('day') };
+}
+
+/** Data civil 'AAAA-MM-DD' de um instante no fuso dado (padrão America/Sao_Paulo). */
+export function isoCivilNoFuso(instante: Date, timeZone: string = FUSO_BR): string {
+  const { ano, mes, dia } = componentesNoFuso(instante, timeZone);
+  return `${String(ano).padStart(4, '0')}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+}
+
+const RE_DATA_ISO = /^(\d{4})-(\d{2})-(\d{2})$/;
+const RE_DATA_BR = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+const RE_DATAHORA_ISO = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(Z|[+-]\d{2}:?\d{2})?$/i;
+
+/**
+ * Lê uma data textual como DATA CIVIL (Date à meia-noite local), igual em
+ * qualquer fuso de servidor:
+ *  - 'AAAA-MM-DD' ou 'DD/MM/AAAA'                → a própria data;
+ *  - 'AAAA-MM-DDThh:mm[:ss[.fff]]' sem fuso        → a data escrita (hora de parede);
+ *  - com 'Z' ou deslocamento (ex.: '-03:00')       → a data civil do instante em
+ *    America/Sao_Paulo (ou no fuso informado); com `timeZone = null`, ignora o
+ *    fuso e vale a data escrita (regra "prefixo AAAA-MM-DD").
+ * Formato não reconhecido ou data inexistente → null.
+ */
+export function parseDataCivil(valor: string, timeZone: string | null = FUSO_BR): Date | null {
+  const s = String(valor).trim();
+  let m = RE_DATA_ISO.exec(s);
+  if (m) return dataCivilLocal(Number(m[1]), Number(m[2]), Number(m[3]));
+  m = RE_DATA_BR.exec(s);
+  if (m) return dataCivilLocal(Number(m[3]), Number(m[2]), Number(m[1]));
+  m = RE_DATAHORA_ISO.exec(s);
+  if (!m) return null;
+  const escrita = dataCivilLocal(Number(m[1]), Number(m[2]), Number(m[3]));
+  if (!escrita) return null;
+  if (!m[7] || timeZone === null) return escrita; // sem fuso (ou regra "data escrita")
+  const instante = new Date(s.replace(' ', 'T'));
+  if (isNaN(instante.getTime())) return null;
+  const { ano, mes, dia } = componentesNoFuso(instante, timeZone);
+  return dataCivilLocal(ano, mes, dia);
+}
+
 // ─────────────────────────── Interpolação de curva ───────────────────────────
 
 export type MetodoInterpolacao = 'linear' | 'loglinear_df';
@@ -170,8 +270,39 @@ function dXnpv(taxa: number, fluxos: FluxoDatado[]): number {
 }
 
 /**
+ * Número de trocas de sinal do fluxo em ordem cronológica. Fluxos no mesmo dia
+ * são somados antes (entram com o mesmo expoente no XNPV); totais nulos são
+ * ignorados.
+ *
+ * Regra de sinais de Descartes: há no máximo tantas TIRs quanto trocas de sinal.
+ * Com MAIS DE UMA troca a TIR pode não ser única — a raiz devolvida por `xirr`
+ * depende do chute — e a TIR não serve como critério de decisão (use o VPL).
+ */
+export function trocasDeSinal(fluxos: FluxoDatado[]): number {
+  if (!fluxos.length) return 0;
+  const inicio = fluxos.reduce((min, f) => (f.date.getTime() < min.getTime() ? f.date : min), fluxos[0].date);
+  const porDia = new Map<number, Decimal>();
+  for (const f of fluxos) {
+    const t = countCalendarDays(inicio, f.date);
+    porDia.set(t, (porDia.get(t) ?? D(0)).plus(f.amount));
+  }
+  let trocas = 0;
+  let sinalAnterior = 0;
+  for (const t of [...porDia.keys()].sort((a, b) => a - b)) {
+    const sinal = porDia.get(t)!.cmp(0);
+    if (sinal === 0) continue;
+    if (sinalAnterior !== 0 && sinal !== sinalAnterior) trocas++;
+    sinalAnterior = sinal;
+  }
+  return trocas;
+}
+
+/**
  * Taxa interna de retorno de fluxos datados (equivalente a XIRR do Excel).
  * Newton-Raphson com fallback para bissecção. Retorna taxa efetiva anual (fração).
+ *
+ * Atenção: com mais de uma troca de sinal (ver `trocasDeSinal`) pode haver mais
+ * de uma TIR; esta função devolve UMA delas (a que o chute alcança).
  */
 export function xirr(fluxos: FluxoDatado[], guess = 0.1): number {
   if (fluxos.length < 2) throw new Error('xirr: ao menos dois fluxos são necessários.');

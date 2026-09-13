@@ -2,6 +2,7 @@
  * §2.10 PU de títulos BR (base 252). LTN/Prefixado (zero-cupom) e NTN-F (cupom semestral).
  * Função pura. Taxas em fração decimal; du = dias úteis ANBIMA do título.
  */
+import Decimal from 'decimal.js';
 export interface LtnInput {
     /** Valor nominal (face). */
     vn: number;
@@ -13,6 +14,12 @@ export interface LtnInput {
 export declare function puLtn(input: LtnInput): {
     pu: number;
 };
+/**
+ * Taxa do cupom periódico pela convenção NTN-F (STN/ANBIMA): (1 + taxa)^(1/m) − 1.
+ * Ex.: 10% a.a. semestral → 4,8808848…% (cupom de R$ 48,80885 por R$ 1.000).
+ * Compartilhada com o calculador de duration (modo 'ntnf').
+ */
+export declare function taxaCupomPeriodicoNtnf(couponRateAnnual: Decimal.Value, m: Decimal.Value): Decimal;
 export interface NtnfInput {
     /** Valor de face. */
     face: number;

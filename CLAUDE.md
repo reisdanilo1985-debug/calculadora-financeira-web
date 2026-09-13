@@ -70,17 +70,48 @@ Símbolos Yahoo Finance em `MarketDashboardService.ts`:
 ```
 fator_diario = (1 + taxa_anual/100) ^ (1/252)
 ```
-- Percentual do CDI (ex: 110%): `(1 + 1.10 * taxa/100)^(1/252)`
+- Percentual do CDI (ex: 110%), convenção B3 — o percentual incide sobre a taxa DIÁRIA:
+  `TDI = (1 + taxa/100)^(1/252) − 1` → `fator_diario = 1 + TDI × 1.10`
+- CDI/Selic + taxa (ex: CDI + 2% a.a.): Fator de Spread multiplicativo — base 252: `(1 + 0.02)^(1/252)` por dia útil; base 360/365: `(1 + 0.02)^(dc/base)`
+- Dia útil sem dado oficial e sem premissa: erro `MissingIndexDataError` (API responde 422). Nunca usar 0%.
+- Calendário: feriados nacionais ANBIMA, incluindo 20/11 desde 2024 (Lei 14.759/2023)
 
 ### IPCA / IGP-M / INCC (Índices Mensais)
 ```
 fator_pro_rata = (1 + indice_mensal/100) ^ (dias_utilizados / dias_do_mes)
 ```
 
-### SOFR (ACT/360)
+- Base 360: 30/360 no numerador e no denominador (mês fechado = fator mensal integral)
+- Premissas por competência: a observação datada no dia 1 cobre o mês inteiro
+
+### Amortizações, aportes e juros (T5)
+- Valor pago na data D deixa de render a partir de D (B3, "até a data de pagamento, exclusive"); evento em dia não útil vale no próximo dia útil
+- Periódicas ancoradas no dia original com ajuste ao fim do mês (31/01 → 28/02 → 31/03)
+- Juros T5: tempo até o fim do intervalo de cada linha (a última vai até a data final)
+
+### IPCA / IGP-M / INCC — composição
+- % do índice (ex: 110%): `taxa_mensal × 1.10`
+- Índice + taxa (ex: IPCA + 6% a.a.): `(1 + 0.06)^(dias_do_segmento/365)` composto em CADA segmento mensal (não no fim)
+- Índice + taxa ao mês (ex: IPCA + 1% a.m., Comparador): envia a a.a. equivalente composta com `additiveBase: 360` → spread em 30E/360 (mês cheio = 1,01 exato); o pro-rata do índice continua na base do cálculo
+
+### Valor Presente (T2 — DCF)
+- Fluxos com sinal (saídas negativas); fluxo na data de referência entra com t = 0; antes dela → 400
+- `t` pela base do cálculo (252 d.u. ou dias corridos/360/365); VP total com saídas = VPL
+- TIR: taxa que zera o VPL na mesma contagem de tempo (base 365 = XIRR do Excel); varredura −99% a 1.000% a.a. + bissecção; mais de uma raiz → aviso de TIR múltipla, decidir pelo VPL
+- Perpetuidade (Gordon) na data N do último fluxo: `VT_N = FC_base × (1 + g_p) / (r_p − g_p)`, taxas equivalentes ao período (`(1 + a.a.)^(1/k) − 1`); exige r > g; FC_base padrão = soma dos fluxos da data N
+- TIR/VPL saiu do menu da Tesouraria (rota `/api/tesouraria/calc/tir-vpl` segue ativa)
+
+### Fluxo Completo (T4 — SAC/Price/Bullet)
+- Parcelas mensais, trimestrais, semestrais ou anuais (`installmentPeriodicity`): taxa do período = `(1 + a.a.)^(meses/12) − 1`; carência em múltiplos do período (senão 400)
+- Datas ancoradas no dia do início com ajuste ao fim do mês (31/01 → 28/02 → 31/03)
+- Resultado traz `comparison` com os três sistemas (mesmo principal, taxa, prazo e carência)
+- "Amortização (Price & SAC)" saiu do menu da Tesouraria (rota `/api/tesouraria/calc/amortizacao` segue ativa)
+
+### SOFR (ACT/360, metodologia NY Fed)
 ```
-fator = produto de (1 + sofr_diario/100 * dias_corridos/360) para cada dia
+fator = produto de (1 + sofr/100 * n/360) por publicação; n = dias corridos até a próxima publicação
 ```
+- Fim de semana/feriado não capitaliza; início em dia sem publicação usa a última taxa publicada antes dele
 
 ### Taxa Pré-fixada
 - Base 252: `(1 + taxa)^(du/252)` | Base 360: `(1 + taxa)^(dc/360)` | Base 365: `(1 + taxa)^(dc/365)`

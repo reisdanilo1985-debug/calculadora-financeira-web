@@ -18,15 +18,46 @@ import {
   AlertCircle
 } from 'lucide-react';
 
+/** Item de sensibilidade devolvido pelo motor (POST /api/wacc/calcular → `sensibilidade`). */
+interface WaccSensibilidadeItem {
+  id: 'rf' | 'erp' | 'beta' | 'kd' | 'ir' | 'de';
+  premissa: string;
+  choque: string;
+  waccChocado: number | null;
+  deltaWaccPP: number | null;
+  decomposicao?: { viaCustoDivida: number; viaBeta: number };
+  descricao: string;
+}
+
 interface WaccResultProps {
-  result: WaccResultType;
+  result: WaccResultType & { sensibilidade?: WaccSensibilidadeItem[] };
   request: WaccRequest;
 }
+
+/** Rótulo curto de cada choque, no estilo dos cartões. */
+const ROTULO_CHOQUE: Record<WaccSensibilidadeItem['id'], string> = {
+  beta: 'Se Beta subir +10%',
+  rf: 'Se Rf subir +1,0 p.p.',
+  erp: 'Se ERP subir +1,0 p.p.',
+  kd: 'Se Kd (antes do IR) subir +1,0 p.p.',
+  ir: 'Se IR subir +1,0 p.p.',
+  de: 'Se D/E subir +10%',
+};
+const ORDEM_CHOQUES: WaccSensibilidadeItem['id'][] = ['beta', 'rf', 'erp', 'kd', 'ir', 'de'];
 
 export function WaccResult({ result, request }: WaccResultProps) {
   const fmt = (v: number, casas = 2) => v.toFixed(casas).replace('.', ',');
   const fmtPct = (v: number) => `${fmt(v)}%`;
   const fmtCurr = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: request.moeda }).format(v);
+  /** Variação em p.p. com sinal; "−0,00" vira "0,00". */
+  const fmtPP = (v: number) => {
+    const arred = Math.round(v * 100) / 100;
+    if (arred === 0) return '0,00 p.p.';
+    return `${arred > 0 ? '+' : '−'}${fmt(Math.abs(arred))} p.p.`;
+  };
+  const sensibilidade = ORDEM_CHOQUES
+    .map(id => result.sensibilidade?.find(s => s.id === id))
+    .filter((s): s is WaccSensibilidadeItem => !!s);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -141,7 +172,7 @@ export function WaccResult({ result, request }: WaccResultProps) {
         </Card>
       </div>
 
-      {/* ── Tabela de Sensibilidade (Simplificada Fase 1) ── */}
+      {/* ── Análise de Sensibilidade (calculada pelo motor, em p.p.) ── */}
       <Card className="glass-card border-emerald-500/10">
         <CardHeader className="py-3 border-b border-white/10 flex flex-row items-center justify-between">
           <CardTitle className="text-sm font-semibold flex items-center gap-2 text-emerald-400/80">
@@ -151,18 +182,27 @@ export function WaccResult({ result, request }: WaccResultProps) {
           <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest bg-white/5 px-2 py-0.5 rounded">Fase 1</span>
         </CardHeader>
         <CardContent className="pt-4 py-4 px-4 text-center">
-           <p className="text-xs text-muted-foreground mb-4">Como o WACC varia com a mudança do Beta (β) e do ERP</p>
-           <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white/5 p-4 rounded-lg flex flex-col gap-2">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Se Beta subir +10%</span>
-                <span className="text-lg font-bold text-rose-400/80">+{fmt(result.wacc * 0.05)}% no WACC</span>
-              </div>
-              <div className="bg-white/5 p-4 rounded-lg flex flex-col gap-2">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Se Rf subir +1.0pp</span>
-                <span className="text-lg font-bold text-rose-400/80">+{fmt(result.pesoEquity)}pp no WACC</span>
-              </div>
-           </div>
-           <p className="text-[9px] text-muted-foreground italic mt-4 uppercase tracking-tighter">* Matriz completa 5x5 disponível na versão Premium.</p>
+           <p className="text-xs text-muted-foreground mb-4">Como o WACC varia com um choque isolado em cada premissa (WACC recalculado, em pontos percentuais)</p>
+           {sensibilidade.length > 0 ? (
+             <div className="grid grid-cols-2 gap-4">
+                {sensibilidade.map(s => (
+                  <div key={s.id} className="bg-white/5 p-4 rounded-lg flex flex-col gap-2" title={s.descricao}>
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">{ROTULO_CHOQUE[s.id]}</span>
+                    <span className={`text-lg font-bold ${s.deltaWaccPP !== null && s.deltaWaccPP < 0 ? 'text-emerald-400' : 'text-rose-400/80'}`}>
+                      {s.deltaWaccPP === null ? '—' : `${fmtPP(s.deltaWaccPP)} no WACC`}
+                    </span>
+                    {s.id === 'ir' && s.decomposicao && (
+                      <span className="text-[10px] text-muted-foreground">
+                        {fmtPP(s.decomposicao.viaCustoDivida)} via Kd · {fmtPP(s.decomposicao.viaBeta)} via β realavancado
+                      </span>
+                    )}
+                  </div>
+                ))}
+             </div>
+           ) : (
+             <p className="text-xs text-muted-foreground">Sensibilidade indisponível para este cálculo.</p>
+           )}
+           <p className="text-[9px] text-muted-foreground italic mt-4 uppercase tracking-tighter">* Demais premissas constantes. Beta +10% sobre o beta alavancado; IR inclui a realavancagem do beta; D/E +10% com V = E + D constante e Kd inalterado.</p>
         </CardContent>
       </Card>
     </div>

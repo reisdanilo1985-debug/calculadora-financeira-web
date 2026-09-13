@@ -1,9 +1,14 @@
 /**
  * §2.7 TIR / VPL para fluxos irregulares (datados). Função pura.
  * Reaproveita os solvers xirr/xnpv das primitivas.
+ *
+ * TIR múltipla: com mais de uma troca de sinal no fluxo (regra de Descartes)
+ * pode haver mais de uma TIR, e a raiz devolvida depende do chute do solver.
+ * Nesse caso o resultado traz `alertaTirMultipla` e o veredito passa a ser
+ * decidido pelo VPL ao custo de capital (VPL > 0 → Aceitar), nunca pela TIR.
  */
 
-import { xirr, xnpv, FluxoDatado, equivalente } from '../primitives';
+import { xirr, xnpv, FluxoDatado, equivalente, trocasDeSinal } from '../primitives';
 
 export interface TirVplInput {
   /** Fluxos datados (saídas negativas, entradas positivas). */
@@ -15,14 +20,22 @@ export interface TirVplInput {
 }
 
 export interface TirVplResult {
-  /** TIR anual (fração). */
+  /** TIR anual (fração). Com `alertaTirMultipla`, é apenas UMA das TIRs possíveis. */
   tirAnual: number;
   /** TIR mensal equivalente (fração). */
   tirMensal: number;
   /** VPL na taxa de desconto (presente quando taxaDesconto é informada). */
   vpl?: number;
+  /** Trocas de sinal do fluxo em ordem cronológica (> 1 ⇒ TIR pode não ser única). */
+  trocasDeSinal: number;
+  /** Presente quando há mais de uma troca de sinal (TIR possivelmente múltipla). */
+  alertaTirMultipla?: string;
+  /** VPL ao custo de capital (presente com TIR múltipla e custo informado). */
+  vplCustoCapital?: number;
   /** Veredito de aceitação (presente quando custoCapital é informado). */
   veredito?: 'Aceitar' | 'Rejeitar';
+  /** Régua do veredito: 'TIR' (fluxo convencional) ou 'VPL' (TIR múltipla). */
+  criterioVeredito?: 'TIR' | 'VPL';
 }
 
 export function tirVpl(input: TirVplInput): TirVplResult {
@@ -32,16 +45,35 @@ export function tirVpl(input: TirVplInput): TirVplResult {
   }
 
   const tirAnual = xirr(fluxos);
+  const trocas = trocasDeSinal(fluxos);
+  const tirMultipla = trocas > 1;
+
   const result: TirVplResult = {
     tirAnual,
     tirMensal: equivalente(tirAnual, 1 / 12),
+    trocasDeSinal: trocas,
   };
 
   if (taxaDesconto !== undefined) {
     result.vpl = xnpv(taxaDesconto, fluxos);
   }
+
+  if (tirMultipla) {
+    result.alertaTirMultipla =
+      `TIR múltipla: o fluxo troca de sinal ${trocas} vezes, então pode haver até ${trocas} TIRs ` +
+      'e a TIR exibida é só uma delas (depende do chute do solver). Decida pelo VPL ao custo de capital.';
+  }
+
   if (custoCapital !== undefined) {
-    result.veredito = tirAnual > custoCapital ? 'Aceitar' : 'Rejeitar';
+    if (tirMultipla) {
+      const vplCusto = xnpv(custoCapital, fluxos);
+      result.vplCustoCapital = vplCusto;
+      result.veredito = vplCusto > 0 ? 'Aceitar' : 'Rejeitar';
+      result.criterioVeredito = 'VPL';
+    } else {
+      result.veredito = tirAnual > custoCapital ? 'Aceitar' : 'Rejeitar';
+      result.criterioVeredito = 'TIR';
+    }
   }
 
   return result;

@@ -14,9 +14,11 @@ import {
   AmortizationType,
   CalculationInput,
   CalculationMemoryRow,
-  PeriodicityType,
+  FlowDirection,
 } from '../models/types';
 import { addDays } from '../utils/businessDays';
+// Periodicidade desconhecida é erro (antes travava o laço); datas ancoradas no dia original
+import { monthsPerPeriod, addMonthsAnchored } from '../utils/periodicity';
 
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_UP });
 
@@ -39,42 +41,34 @@ export function expandPeriodicAmortizations(
       continue;
     }
 
-    let current = new Date(amort.date);
-    current.setHours(0, 0, 0, 0);
+    const first = new Date(amort.date);
+    first.setHours(0, 0, 0, 0);
     const endDate = new Date(amort.periodicEndDate);
     endDate.setHours(0, 0, 0, 0);
+    const step = monthsPerPeriod(amort.periodicity);
 
-    while (current <= endDate) {
+    // Cada ocorrência é contada a partir da data ORIGINAL (âncora), com ajuste ao
+    // último dia do mês: 31/01 → 28/02 → 31/03 (antes 31/01 → 03/03 → 03/04).
+    for (let k = 0; ; k++) {
+      const current = addMonthsAnchored(first, k * step);
+      if (current > endDate) break;
+      if (k >= MAX_PERIODIC_EVENTS) {
+        throw new Error(`Amortização periódica gera mais de ${MAX_PERIODIC_EVENTS} eventos. Reduza o período ou aumente a periodicidade.`);
+      }
       result.push({
-        date: new Date(current),
+        date: current,
         type: amort.isPeriodicPercentage ? AmortizationType.PERCENTAGE : AmortizationType.FIXED,
         value: amort.value,
+        direction: amort.direction,
       });
-      current = advanceByPeriodicity(current, amort.periodicity);
     }
   }
 
   return result.sort((a, b) => a.date.getTime() - b.date.getTime());
 }
 
-function advanceByPeriodicity(date: Date, periodicity: PeriodicityType): Date {
-  const d = new Date(date);
-  switch (periodicity) {
-    case PeriodicityType.MONTHLY:
-      d.setMonth(d.getMonth() + 1);
-      break;
-    case PeriodicityType.QUARTERLY:
-      d.setMonth(d.getMonth() + 3);
-      break;
-    case PeriodicityType.SEMIANNUAL:
-      d.setMonth(d.getMonth() + 6);
-      break;
-    case PeriodicityType.ANNUAL:
-      d.setFullYear(d.getFullYear() + 1);
-      break;
-  }
-  return d;
-}
+/** Limite de eventos gerados por uma amortização periódica (100 anos mensais) */
+const MAX_PERIODIC_EVENTS = 1200;
 
 /**
  * Aplica amortizações sobre a memória de cálculo já calculada.
@@ -86,13 +80,23 @@ function advanceByPeriodicity(date: Date, periodicity: PeriodicityType): Date {
  *
  * Isso garante que o efeito da amortização seja propagado corretamente.
  *
+ * Momento do evento (convenção B3, "até a data de pagamento, exclusive"):
+ * o valor pago na data D deixa de render a partir de D.
+ *   - Linhas datadas no INÍCIO do acúmulo (CDI/Selic, SOFR, pré): a linha de D
+ *     já inclui o acúmulo de D, então o evento usa o fator do início da linha
+ *     (F / fator_do_dia) e o saldo do início do dia.
+ *   - Linhas datadas no FIM do acúmulo (índices mensais): o fator da própria
+ *     linha já é o fator em D.
+ *
  * @param rows Memória de cálculo existente (ordenada por data)
  * @param amortizations Lista de amortizações (já expandidas)
+ * @param rowsDatedAtAccrualEnd true para engines que datam a linha no fim do acúmulo
  * @returns Nova memória de cálculo com amortizações aplicadas
  */
 export function applyAmortizations(
   rows: CalculationMemoryRow[],
-  amortizations: AmortizationEntry[]
+  amortizations: AmortizationEntry[],
+  rowsDatedAtAccrualEnd = false
 ): CalculationMemoryRow[] {
   if (!amortizations.length) return rows;
 
@@ -121,46 +125,83 @@ export function applyAmortizations(
 
   const result: CalculationMemoryRow[] = [];
 
+  // Ponteiro sobre a lista ordenada: cada evento é consumido UMA vez, na
+  // primeira linha com data >= data do evento. Antes, a busca por igualdade
+  // aplicava o mesmo evento a todas as linhas da data (ex.: duas linhas na
+  // data final) e ignorava eventos sem linha na data exata.
+  let nextAmortIdx = 0;
+
   for (const row of rows) {
     const rowDate = new Date(row.date);
     rowDate.setHours(0, 0, 0, 0);
 
-    // Verifica amortizações nesta data
-    const amortOnDate = sortedAmorts.filter(a => {
-      const d = new Date(a.date);
+    // Coleta todos os eventos pendentes com data <= data da linha
+    const amortOnDate: AmortizationEntry[] = [];
+    while (nextAmortIdx < sortedAmorts.length) {
+      const d = new Date(sortedAmorts[nextAmortIdx].date);
       d.setHours(0, 0, 0, 0);
-      return d.getTime() === rowDate.getTime();
-    });
+      if (d.getTime() <= rowDate.getTime()) {
+        amortOnDate.push(sortedAmorts[nextAmortIdx]);
+        nextAmortIdx++;
+      } else {
+        break;
+      }
+    }
 
     const adjustedRow: CalculationMemoryRow = {
       ...row,
       balance: computeAdjustedBalance(row).toNumber(),
     };
 
-    // Aplica amortizações desta data
+    // Fator e saldo no momento do evento (ver comentário da função)
+    const rowFactor = new Decimal(row.accumulatedFactor);
+    const growthOfRow = rowsDatedAtAccrualEnd || !row.dailyFactor
+      ? new Decimal(1)
+      : new Decimal(row.dailyFactor);
+    const eventFactor = rowFactor.div(growthOfRow);
+    let balanceAtEvent = new Decimal(adjustedRow.balance).div(growthOfRow);
+
+    // Aplica amortizações e aportes desta data
     for (const amort of amortOnDate) {
-      const currentBalance = new Decimal(adjustedRow.balance);
-      let amortAmount: Decimal;
+      const currentBalance = balanceAtEvent;
+      const isContribution = amort.direction === FlowDirection.IN;
+      let amount: Decimal;
 
       if (amort.type === AmortizationType.FIXED) {
-        amortAmount = Decimal.min(new Decimal(amort.value), currentBalance);
+        // Amortização não pode exceder o saldo; aporte não tem teto
+        amount = isContribution
+          ? new Decimal(amort.value)
+          : Decimal.min(new Decimal(amort.value), currentBalance);
       } else {
-        amortAmount = currentBalance.mul(new Decimal(amort.value).div(100));
+        amount = currentBalance.mul(new Decimal(amort.value).div(100));
       }
 
-      // Registra evento de amortização com o fator acumulado atual
+      // Registra o evento com o fator do momento do evento. Aportes entram com
+      // sinal NEGATIVO: em computeAdjustedBalance, `minus(reduction)` então
+      // SOMA o aporte corrigido pela razão de fatores (F / F_evento).
       amortEvents.push({
-        accFactor: new Decimal(row.accumulatedFactor),
-        amortAmount,
+        accFactor: eventFactor,
+        amortAmount: isContribution ? amount.neg() : amount,
       });
 
-      adjustedRow.balance = currentBalance.minus(amortAmount).toNumber();
-      adjustedRow.amortizationAmount = (adjustedRow.amortizationAmount ?? 0) + amortAmount.toNumber();
-      adjustedRow.description = `Amortização: ${
-        amort.type === AmortizationType.FIXED
-          ? `R$ ${amortAmount.toFixed(2)}`
-          : `${amort.value}% do saldo`
-      }`;
+      balanceAtEvent = isContribution ? currentBalance.plus(amount) : currentBalance.minus(amount);
+      adjustedRow.balance = balanceAtEvent.mul(growthOfRow).toNumber();
+
+      if (isContribution) {
+        adjustedRow.contributionAmount = (adjustedRow.contributionAmount ?? 0) + amount.toNumber();
+        adjustedRow.description = `Aporte: ${
+          amort.type === AmortizationType.FIXED
+            ? `R$ ${amount.toFixed(2)}`
+            : `${amort.value}% do saldo`
+        }`;
+      } else {
+        adjustedRow.amortizationAmount = (adjustedRow.amortizationAmount ?? 0) + amount.toNumber();
+        adjustedRow.description = `Amortização: ${
+          amort.type === AmortizationType.FIXED
+            ? `R$ ${amount.toFixed(2)}`
+            : `${amort.value}% do saldo`
+        }`;
+      }
     }
 
     result.push(adjustedRow);
@@ -174,4 +215,11 @@ export function applyAmortizations(
  */
 export function calcTotalAmortized(rows: CalculationMemoryRow[]): number {
   return rows.reduce((sum, row) => sum + (row.amortizationAmount ?? 0), 0);
+}
+
+/**
+ * Calcula o valor total aportado em um conjunto de linhas.
+ */
+export function calcTotalContributed(rows: CalculationMemoryRow[]): number {
+  return rows.reduce((sum, row) => sum + (row.contributionAmount ?? 0), 0);
 }

@@ -31,10 +31,35 @@ interface WaccFormProps {
   loading: boolean;
 }
 
+type MoedaWacc = WaccRequest['moeda'];
+
+/** Referência de mercado de uma moeda/regime (GET /api/wacc/parametros-mercado). */
+interface ReferenciaMercado {
+  rf: number;
+  erp: number;
+  fonte: string;
+  dataBase?: string;
+  observacao?: string;
+}
+
+/** Resposta da API: referência padrão (BRL nominal) + tabela por moeda e regime. */
+type ParametrosMercadoResposta = ReferenciaMercado & {
+  porMoeda?: Partial<Record<MoedaWacc, { nominal: ReferenciaMercado; real: ReferenciaMercado }>>;
+};
+
+type PaisComDataBase = WaccPais & { dataBase?: string; moeda?: string };
+
 export function WaccForm({ onCalculate, loading }: WaccFormProps) {
   const [setores, setSetores] = useState<WaccSetor[]>([]);
-  const [paises, setPaises] = useState<WaccPais[]>([]);
-  const [marketParams, setMarketParams] = useState<{ rf: number; erp: number; fonte: string } | null>(null);
+  const [paises, setPaises] = useState<PaisComDataBase[]>([]);
+  const [marketParams, setMarketParams] = useState<ParametrosMercadoResposta | null>(null);
+
+  /** Rf/ERP de referência na moeda (regime nominal); sem tabela por moeda, só a padrão (BRL). */
+  const referenciaDaMoeda = (m: ParametrosMercadoResposta | null, moeda: MoedaWacc): ReferenciaMercado | null => {
+    if (!m) return null;
+    if (m.porMoeda?.[moeda]) return m.porMoeda[moeda]!.nominal;
+    return moeda === 'BRL' ? m : null;
+  };
 
   const [formData, setFormData] = useState<WaccRequest>({
     setor: '',
@@ -59,18 +84,22 @@ export function WaccForm({ onCalculate, loading }: WaccFormProps) {
           getWaccPaises(),
           getWaccMarketParams()
         ]);
+        const parametros = m as ParametrosMercadoResposta;
         setSetores(s);
         setPaises(p);
-        setMarketParams(m);
-        
-        // Initial setup for Brazil
+        setMarketParams(parametros);
+
+        // Inicial: Brasil em BRL — Rf/ERP de referência na mesma moeda do cálculo
         const brasil = p.find(item => item.codigo === 'BRA');
-        setFormData(prev => ({
-          ...prev,
-          taxaLivreDeRisco: m.rf,
-          premioRiscoMercado: m.erp,
-          premioRiscoPais: brasil?.crp || 0
-        }));
+        setFormData(prev => {
+          const ref = referenciaDaMoeda(parametros, prev.moeda);
+          return {
+            ...prev,
+            taxaLivreDeRisco: ref ? ref.rf : prev.taxaLivreDeRisco,
+            premioRiscoMercado: ref ? ref.erp : prev.premioRiscoMercado,
+            premioRiscoPais: brasil?.crp || 0
+          };
+        });
       } catch (err) {
         console.error('Erro ao carregar dados do WACC:', err);
       }
@@ -87,15 +116,29 @@ export function WaccForm({ onCalculate, loading }: WaccFormProps) {
     }));
   };
 
+  /** Troca a moeda e reaplica Rf/ERP de referência compatíveis com ela. */
+  const comMoeda = (prev: WaccRequest, moeda: MoedaWacc): WaccRequest => {
+    if (moeda === prev.moeda) return prev;
+    const ref = referenciaDaMoeda(marketParams, moeda);
+    return {
+      ...prev,
+      moeda,
+      taxaLivreDeRisco: ref ? ref.rf : prev.taxaLivreDeRisco,
+      premioRiscoMercado: ref ? ref.erp : prev.premioRiscoMercado,
+    };
+  };
+
   const handlePaisChange = (paisCodigo: string) => {
     const p = paises.find(item => item.codigo === paisCodigo);
-    setFormData(prev => ({
-      ...prev,
-      pais: paisCodigo,
-      premioRiscoPais: p?.crp || 0,
-      moeda: paisCodigo === 'BRA' ? 'BRL' : (paisCodigo === 'USA' ? 'USD' : prev.moeda)
-    }));
+    setFormData(prev => comMoeda(
+      { ...prev, pais: paisCodigo, premioRiscoPais: p?.crp || 0 },
+      paisCodigo === 'BRA' ? 'BRL' : (paisCodigo === 'USA' ? 'USD' : prev.moeda)
+    ));
   };
+
+  const referenciaAtual = referenciaDaMoeda(marketParams, formData.moeda);
+  const fmtPct = (v: number) => `${v.toFixed(2).replace('.', ',')}%`;
+  const dataBaseCRP = paises.find(item => item.codigo === formData.pais)?.dataBase;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,7 +200,7 @@ export function WaccForm({ onCalculate, loading }: WaccFormProps) {
               <select
                 className="w-full h-9 rounded-md border border-input bg-background/50 px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 value={formData.moeda}
-                onChange={(e) => setFormData(prev => ({ ...prev, moeda: e.target.value as any }))}
+                onChange={(e) => setFormData(prev => comMoeda(prev, e.target.value as MoedaWacc))}
               >
                 <option value="BRL">BRL (R$)</option>
                 <option value="USD">USD ($)</option>
@@ -187,7 +230,9 @@ export function WaccForm({ onCalculate, loading }: WaccFormProps) {
                     <HelpCircle className="h-3 w-3 cursor-help text-muted-foreground/60" />
                   </TooltipTrigger>
                   <TooltipContent side="right" className="max-w-xs text-[10px]">
-                    Sugerido: US Treasury 10Y (DGS10) por ser o benchmark global.
+                    {referenciaAtual
+                      ? `Referência ${formData.moeda} nominal ${fmtPct(referenciaAtual.rf)} (data-base ${referenciaAtual.dataBase ?? '—'}). ${referenciaAtual.observacao ?? ''}`
+                      : `Informe a Rf em ${formData.moeda} (mesma moeda e regime do cálculo).`}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -215,7 +260,9 @@ export function WaccForm({ onCalculate, loading }: WaccFormProps) {
                     <HelpCircle className="h-3 w-3 cursor-help text-muted-foreground/60" />
                   </TooltipTrigger>
                   <TooltipContent side="right" className="max-w-xs text-[10px]">
-                    Prêmio pelo risco de mercado global. Damodaran Jan/2025: 5.80%.
+                    {referenciaAtual
+                      ? `Prêmio de mercado maduro (Damodaran, ${referenciaAtual.dataBase ?? 'data-base não informada'}): ${fmtPct(referenciaAtual.erp)}. O risco-país entra à parte (CRP).`
+                      : 'Prêmio pelo risco de mercado maduro; o risco-país entra à parte (CRP).'}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -267,7 +314,7 @@ export function WaccForm({ onCalculate, loading }: WaccFormProps) {
                     <HelpCircle className="h-3 w-3 cursor-help text-muted-foreground/60" />
                   </TooltipTrigger>
                   <TooltipContent side="right" className="max-w-xs text-[10px]">
-                    Country Risk Premium. Sugerido automaticamente ao selecionar o país.
+                    Country Risk Premium (Damodaran{dataBaseCRP ? `, ${dataBaseCRP}` : ''}). Sugerido automaticamente ao selecionar o país.
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -398,7 +445,7 @@ export function WaccForm({ onCalculate, loading }: WaccFormProps) {
           {loading ? 'Calculando...' : 'Calcular WACC / CMPC'}
         </Button>
         <p className="text-[10px] text-center text-muted-foreground mt-3 uppercase tracking-tighter opacity-60">
-          Fundamentação: Metodologia Aswath Damodaran (NYU Stern)
+          Fundamentação: Metodologia Aswath Damodaran (NYU Stern){referenciaAtual?.dataBase ? ` · Dados ${referenciaAtual.dataBase}` : ''}
         </p>
       </div>
     </form>

@@ -8,10 +8,40 @@
 
 import axios from 'axios';
 import { IndexType, IndexDataPoint } from '@correcao/core';
-import { saveIndexData, getIndexData, getLastCachedDate } from './DatabaseService';
+import {
+  saveIndexDataDetailed,
+  getIndexData,
+  getLastCachedDate,
+  getIndexFetchedAt,
+  setIndexFetchedAt,
+} from './DatabaseService';
+import { coordenarCarga, cargaEmAndamento, isCacheExpired, REVISION_WINDOW_DAYS_DAILY } from './BCBService';
 import logger from '../middleware/logger';
 
 const FRED_CSV_URL = 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=SOFR';
+
+/** SOFR é diário: mesmo TTL das séries diárias do BCB, sobre `fetched_at`. */
+const SOFR_TTL_HOURS = 4;
+
+/** Primeira publicação do SOFR (data local, sem deslocamento de fuso). */
+const SOFR_START = new Date(2018, 3, 2);
+
+/** Baixa o CSV no intervalo e grava; marca/limpa `fetched_at` conforme sucesso/falha. */
+async function fetchAndCacheSOFR(start: Date, end: Date): Promise<{ received: number; inserted: number; updated: number }> {
+  let data: IndexDataPoint[];
+  try {
+    data = await fetchSOFRFromFREDCSV(start, end);
+  } catch (error) {
+    setIndexFetchedAt(IndexType.SOFR, null);
+    throw error;
+  }
+  const { inserted, updated } = data.length > 0
+    ? saveIndexDataDetailed(IndexType.SOFR, data, { marcarSincronizado: false })
+    : { inserted: 0, updated: 0 };
+  setIndexFetchedAt(IndexType.SOFR, new Date());
+  if (updated > 0) logger.info(`[SOFR] ${updated} valor(es) revisado(s) pelo FRED atualizado(s) no cache`);
+  return { received: data.length, inserted, updated };
+}
 
 /**
  * Busca dados do SOFR via CSV público do FRED (sem API Key).
@@ -68,24 +98,33 @@ export async function getSOFRWithCache(
   startDate: Date,
   endDate: Date
 ): Promise<{ data: IndexDataPoint[]; fromCache: boolean; warning?: string }> {
-  const lastCachedDate = getLastCachedDate(IndexType.SOFR);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // TTL sobre o instante da última sincronização com o FRED (E02), não sobre a
+  // data da última observação — que é sempre anterior a "hoje".
+  const fetchedAt = getIndexFetchedAt(IndexType.SOFR);
+  let needsFetch = isCacheExpired(fetchedAt, SOFR_TTL_HOURS);
 
-  const needsFetch = !lastCachedDate || lastCachedDate < today;
+  if (needsFetch && fetchedAt && cargaEmAndamento(IndexType.SOFR) === 'completa') {
+    needsFetch = false; // refresh completo sobre cache já sincronizado: responde com o cache atual
+  }
 
   if (needsFetch) {
     try {
-      // Busca desde o início do SOFR se não houver cache, ou só o incremento
-      const fetchStart = lastCachedDate
-        ? new Date(lastCachedDate.getTime() + 86400000)
-        : new Date('2018-04-02');
+      const { received, updated } = await coordenarCarga(IndexType.SOFR, 'incremental', () => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const last = getLastCachedDate(IndexType.SOFR);
+        // Cache vazio → desde o início do SOFR; nunca sincronizado/falha anterior →
+        // dia seguinte ao último dado; TTL vencido → janela de revisão de 14 dias.
+        const fetchStart = !last
+          ? SOFR_START
+          : !getIndexFetchedAt(IndexType.SOFR)
+            ? new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1)
+            : new Date(last.getFullYear(), last.getMonth(), last.getDate() - REVISION_WINDOW_DAYS_DAILY);
+        return fetchAndCacheSOFR(fetchStart, today);
+      });
 
-      const newData = await fetchSOFRFromFREDCSV(fetchStart, today);
-
-      if (newData.length > 0) {
-        saveIndexData(IndexType.SOFR, newData);
-        logger.info(`Cache SOFR atualizado: ${newData.length} novos registros`);
+      if (received > 0) {
+        logger.info(`Cache SOFR atualizado: ${received} registros recebidos (${updated} revisado(s))`);
       }
     } catch (error: any) {
       const warning = `FRED indisponível. Usando dados SOFR em cache. (${error.message})`;
@@ -103,13 +142,11 @@ export async function getSOFRWithCache(
  * Força atualização completa do histórico do SOFR (desde 2018).
  */
 export async function forceRefreshSOFR(): Promise<number> {
-  const start = new Date('2018-04-02');
-  const today = new Date();
+  const { inserted, updated } = await coordenarCarga(IndexType.SOFR, 'completa', () => {
+    logger.info('[SOFR] Iniciando refresh completo via FRED CSV público...');
+    return fetchAndCacheSOFR(SOFR_START, new Date());
+  });
 
-  logger.info('[SOFR] Iniciando refresh completo via FRED CSV público...');
-  const data = await fetchSOFRFromFREDCSV(start, today);
-  const inserted = saveIndexData(IndexType.SOFR, data);
-
-  logger.info(`[SOFR] Refresh completo: ${inserted} novos registros inseridos`);
+  logger.info(`[SOFR] Refresh completo: ${inserted} novos registros inseridos, ${updated} revisado(s)`);
   return inserted;
 }

@@ -3,9 +3,15 @@ import { calcularWACC, WaccInput } from '@correcao/core';
 import {
   SETORES_DAMODARAN,
   PAISES_DAMODARAN,
+  DAMODARAN_VERSAO,
+  MOEDAS,
+  REGIMES,
+  Moeda,
+  Regime,
   getBetaBySetor,
   getCRPByPais,
-  getParametrosMercadoPadrao,
+  getParametrosMercado,
+  getTabelaParametrosMercado,
 } from '../services/DamodaranService';
 import logger from '../middleware/logger';
 
@@ -13,7 +19,7 @@ export const waccRouter = Router();
 
 /**
  * GET /api/wacc/setores
- * Retorna a lista de setores com beta desalavancado (Damodaran)
+ * Retorna a lista de setores com beta desalavancado (Damodaran), com data-base e fonte por item
  */
 waccRouter.get('/setores', (_req: Request, res: Response) => {
   return res.json(SETORES_DAMODARAN);
@@ -21,23 +27,32 @@ waccRouter.get('/setores', (_req: Request, res: Response) => {
 
 /**
  * GET /api/wacc/paises
- * Retorna a lista de países com CRP (Damodaran)
+ * Retorna a lista de países com CRP (Damodaran), com moeda, data-base e fonte por item
  */
 waccRouter.get('/paises', (_req: Request, res: Response) => {
   return res.json(PAISES_DAMODARAN);
 });
 
 /**
- * GET /api/wacc/parametros-mercado
- * Retorna os parâmetros de mercado padrão (Rf e ERP global Damodaran)
+ * GET /api/wacc/parametros-mercado?moeda=BRL|USD|EUR&regime=nominal|real
+ * Parâmetros de referência (Rf e ERP) coerentes com a moeda e o regime, com data-base.
+ * Padrão: BRL nominal (moeda inicial do formulário). `porMoeda` traz a tabela completa.
  */
-waccRouter.get('/parametros-mercado', (_req: Request, res: Response) => {
-  const params = getParametrosMercadoPadrao();
+waccRouter.get('/parametros-mercado', (req: Request, res: Response) => {
+  const moeda = String(req.query.moeda ?? 'BRL').toUpperCase() as Moeda;
+  const regime = String(req.query.regime ?? 'nominal').toLowerCase() as Regime;
+
+  if (!MOEDAS.includes(moeda)) {
+    return res.status(400).json({ error: `moeda deve ser uma de: ${MOEDAS.join(', ')}` });
+  }
+  if (!REGIMES.includes(regime)) {
+    return res.status(400).json({ error: `regime deve ser um de: ${REGIMES.join(', ')}` });
+  }
+
   return res.json({
-    rf: params.rf,
-    erp: params.erp,
-    fonte: 'Damodaran (NYU Stern) — Janeiro 2025',
-    observacao: 'Rf: US T-Bond 10Y | ERP: Prêmio implícito de risco de mercado global',
+    ...getParametrosMercado(moeda, regime),
+    versao: DAMODARAN_VERSAO,
+    porMoeda: getTabelaParametrosMercado(),
   });
 });
 
@@ -63,7 +78,7 @@ waccRouter.get('/pais/:codigo', (req: Request, res: Response) => {
 
 /**
  * POST /api/wacc/calcular
- * Calcula o WACC dado os inputs
+ * Calcula o WACC dado os inputs (inclui a sensibilidade por premissa, em p.p.)
  */
 waccRouter.post('/calcular', (req: Request, res: Response) => {
   const body = req.body as WaccInput;

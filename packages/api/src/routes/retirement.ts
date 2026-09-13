@@ -39,6 +39,17 @@ retirementRouter.post('/calcular', (req: Request, res: Response) => {
     if (!input.perfilRisco || !['conservador', 'moderado', 'agressivo'].includes(input.perfilRisco)) {
       return res.status(400).json({ error: 'perfilRisco deve ser: conservador, moderado ou agressivo' });
     }
+    // Semente do Monte Carlo (opcional): inteiro; ausente → semente padrão do motor (resultado reprodutível)
+    if (input.semente !== undefined && input.semente !== null) {
+      const semente = Number(input.semente);
+      if (!Number.isInteger(semente) || semente < 0 || semente > 4294967295) {
+        return res.status(400).json({ error: 'semente deve ser um inteiro entre 0 e 4294967295' });
+      }
+      input.semente = semente;
+    }
+    if (input.tabelaPGBL && !['regressiva', 'progressiva'].includes(input.tabelaPGBL)) {
+      return res.status(400).json({ error: 'tabelaPGBL deve ser: regressiva ou progressiva' });
+    }
 
     // Defaults — campos numéricos ausentes viram 0 (não NaN); booleanos, false.
     input.expectativaVida = input.expectativaVida || 90;
@@ -60,7 +71,7 @@ retirementRouter.post('/calcular', (req: Request, res: Response) => {
     input.gastoMensalSaude = input.gastoMensalSaude || 0;
     input.genero = input.genero || 'M';
 
-    logger.info('retirement.calcular', { idadeAtual: input.idadeAtual, perfil: input.perfilRisco });
+    logger.info('retirement.calcular', { idadeAtual: input.idadeAtual, perfil: input.perfilRisco, semente: input.semente ?? 'padrão' });
 
     const result = simularAposentadoria(input);
     return res.json(result);
@@ -76,13 +87,14 @@ retirementRouter.post('/calcular', (req: Request, res: Response) => {
  */
 retirementRouter.post('/inss', (req: Request, res: Response) => {
   try {
-    const { genero, idadeAposentadoria, tempoContribuicaoAnos, salarioContribuicao } = req.body;
+    const { genero, idadeAposentadoria, tempoContribuicaoAnos, salarioContribuicao, dataReferencia } = req.body;
 
     if (!genero || !idadeAposentadoria || tempoContribuicaoAnos === undefined || !salarioContribuicao) {
       return res.status(400).json({ error: 'Campos obrigatórios: genero, idadeAposentadoria, tempoContribuicaoAnos, salarioContribuicao' });
     }
 
-    const result = calcularBeneficioINSS(genero, idadeAposentadoria, tempoContribuicaoAnos, salarioContribuicao);
+    // Elegibilidade (EC 103/2019 art. 19) + valor (art. 26); teto/salário mínimo pela vigência de `dataReferencia` (padrão: hoje)
+    const result = calcularBeneficioINSS(genero, idadeAposentadoria, tempoContribuicaoAnos, salarioContribuicao, dataReferencia);
     return res.json(result);
   } catch (err: any) {
     return res.status(500).json({ error: err.message });

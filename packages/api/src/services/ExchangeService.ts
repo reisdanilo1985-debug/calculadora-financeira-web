@@ -13,11 +13,29 @@ const SGS_SERIES: Partial<Record<Currency, number>> = {
 
 const BCB_BASE_URL = 'https://api.bcb.gov.br/dados/serie/bcdata.sgs';
 
+/**
+ * Datas de consulta são datas CIVIS representadas como Date local (as rotas
+ * convertem "AAAA-MM-DD" por componentes, ao meio-dia) — por isso os
+ * componentes locais. Nunca passar `new Date("AAAA-MM-DD")`: é meia-noite UTC
+ * e, em America/Sao_Paulo, cai no dia anterior (F3-01).
+ */
+function componentesCivis(date: Date): { y: string; m: string; d: string } {
+  return {
+    y: String(date.getFullYear()),
+    m: String(date.getMonth() + 1).padStart(2, '0'),
+    d: String(date.getDate()).padStart(2, '0'),
+  };
+}
+
 function formatDateSGS(date: Date): string {
-  const d = date.getDate().toString().padStart(2, '0');
-  const m = (date.getMonth() + 1).toString().padStart(2, '0');
-  const y = date.getFullYear();
+  const { y, m, d } = componentesCivis(date);
   return `${d}/${m}/${y}`;
+}
+
+/** Data civil de Brasília (UTC−3) de um instante Unix, como Date local ao meio-dia. */
+function diaCivilBrasilia(epochSeconds: number): Date {
+  const [y, m, d] = new Date(epochSeconds * 1000 - 3 * 3600 * 1000).toISOString().slice(0, 10).split('-').map(Number);
+  return new Date(y, m - 1, d, 12);
 }
 
 export async function getExchangeRates(
@@ -52,10 +70,12 @@ export async function getExchangeRates(
       });
     } else {
       // Fallback para AwesomeAPI (Ex: CNY)
-      // startDate e endDate em formato YYYYMMDD
-      const startStr = startDate.toISOString().slice(0, 10).replace(/-/g, '');
-      const endStr = endDate.toISOString().slice(0, 10).replace(/-/g, '');
-      
+      // startDate e endDate em formato YYYYMMDD (data civil, componentes locais)
+      const ini = componentesCivis(startDate);
+      const fim = componentesCivis(endDate);
+      const startStr = `${ini.y}${ini.m}${ini.d}`;
+      const endStr = `${fim.y}${fim.m}${fim.d}`;
+
       const url = `https://economia.awesomeapi.com.br/json/daily/${currency}-BRL/10000`;
       const { data } = await axios.get(url, {
         params: { start_date: startStr, end_date: endStr },
@@ -63,8 +83,10 @@ export async function getExchangeRates(
         ...proxyConfig(),
       });
 
+      // timestamp = instante da última cotação do dia; a data do ponto é a data
+      // civil em Brasília (um fechamento após 21h BRT já é o dia seguinte em UTC).
       return data.map((item: any) => ({
-        date: new Date(parseInt(item.timestamp) * 1000),
+        date: diaCivilBrasilia(parseInt(item.timestamp)),
         sellValue: parseFloat(item.ask)
       })).reverse(); // Retorna descrescente, revertemos para cronológico
     }

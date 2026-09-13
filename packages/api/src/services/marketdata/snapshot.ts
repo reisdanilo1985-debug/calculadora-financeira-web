@@ -11,7 +11,7 @@
  */
 
 import axios from 'axios';
-import { IndexType, PremissasSnapshot, Proveniencia, VerticeCurva } from '@correcao/core';
+import { IndexType, PremissasSnapshot, Proveniencia, VerticeCurva, isoCivilNoFuso } from '@correcao/core';
 import { getIndexDataWithCache } from '../BCBService';
 import { getSOFRWithCache } from '../FREDService';
 import { PtaxService } from '../PtaxService';
@@ -82,6 +82,15 @@ let lastBuiltAt = 0;
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+/**
+ * Data de referência do snapshot: data civil de America/Sao_Paulo no instante
+ * dado (auditoria 2026-09-12, N02/UI-01). `toISOString().slice(0, 10)` é a data
+ * UTC — depois das 21h BRT já mostrava "amanhã".
+ */
+export function dataRefSnapshot(agora: Date = new Date()): string {
+  return isoCivilNoFuso(agora, 'America/Sao_Paulo');
 }
 
 function ok(fonte: string): Proveniencia {
@@ -230,7 +239,7 @@ async function buildSnapshot(
   };
 
   return {
-    dataRef: new Date().toISOString().slice(0, 10),
+    dataRef: dataRefSnapshot(),
     escalares: {
       cdiAa: cdi.value,
       selicMeta: selic.value,

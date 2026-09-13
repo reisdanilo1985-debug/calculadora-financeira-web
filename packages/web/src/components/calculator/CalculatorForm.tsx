@@ -18,13 +18,15 @@ import {
 import { DateInputBR } from '@/components/ui/date-input-br';
 import { AmortizationModal, AmortizationEntry } from './AmortizationModal';
 import { FuturePremisesModal, FuturePremise } from './FuturePremisesModal';
-import { DCFFlowsModal, DCFCashFlow } from './DCFFlowsModal';
+import { FlowsEditor, FlowRow, linhasVazias } from '@/components/ui/flows-editor';
+import { lerNumeroPtBr } from '@/lib/numeroPtBr';
 import {
   runCalculation, CalculationResult, CalculationRequest,
-  ThesisType, GracePeriodType, AmortizationSystem,
+  ThesisType, GracePeriodType, AmortizationSystem, Periodicity,
 } from '@/lib/api';
 import { INDEX_LABELS, BASIS_LABELS } from '@/lib/utils';
 import { toAnnual, RateMode } from '@/lib/rateConversion';
+import { hojeISO, somarMesesISO } from '@/lib/datas';
 import axios from 'axios';
 
 interface CalculatorFormProps {
@@ -86,33 +88,32 @@ const DEFAULT_BASIS: Record<string, number> = {
   IPCA: 365, IGPM: 365, INCC: 365, SOFR: 360, PREFIXADA: 365,
 };
 
+// Datas pelo relógio local do usuário (toISOString daria a data UTC: "amanhã" à noite)
 const QUICK_RANGES = [
   {
     label: 'YTD', tooltip: 'Início do ano até hoje',
     getDates: () => {
-      const today = new Date();
-      return { start: `${today.getFullYear()}-01-01`, end: today.toISOString().slice(0, 10) };
+      const hoje = hojeISO();
+      return { start: `${hoje.slice(0, 4)}-01-01`, end: hoje };
     },
   },
   {
     label: '12M', tooltip: 'Últimos 12 meses',
     getDates: () => {
-      const end = new Date(); const start = new Date(end);
-      start.setFullYear(start.getFullYear() - 1);
-      return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+      const hoje = hojeISO();
+      return { start: somarMesesISO(hoje, -12), end: hoje };
     },
   },
   {
     label: '24M', tooltip: 'Últimos 24 meses',
     getDates: () => {
-      const end = new Date(); const start = new Date(end);
-      start.setFullYear(start.getFullYear() - 2);
-      return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+      const hoje = hojeISO();
+      return { start: somarMesesISO(hoje, -24), end: hoje };
     },
   },
   {
     label: 'Max', tooltip: 'Desde 2000',
-    getDates: () => ({ start: '2000-01-01', end: new Date().toISOString().slice(0, 10) }),
+    getDates: () => ({ start: '2000-01-01', end: hojeISO() }),
   },
 ];
 
@@ -128,6 +129,23 @@ const AMORT_SYSTEM_LABELS: Record<AmortizationSystem, string> = {
   PRICE: 'Price — Parcela Fixa',
   BULLET: 'Bullet — Pagamento no Vencimento',
 };
+
+const PERIODICITY_LABELS: Record<Periodicity, string> = {
+  ANNUAL: 'Anual',
+  SEMIANNUAL: 'Semestral',
+  QUARTERLY: 'Trimestral',
+  MONTHLY: 'Mensal',
+};
+
+const MESES_POR_PERIODO: Record<Periodicity, number> = { MONTHLY: 1, QUARTERLY: 3, SEMIANNUAL: 6, ANNUAL: 12 };
+
+/** Unidade do período das parcelas, no plural: "meses", "trimestres"… */
+const PERIODO_PLURAL: Record<Periodicity, string> = {
+  MONTHLY: 'meses', QUARTERLY: 'trimestres', SEMIANNUAL: 'semestres', ANNUAL: 'anos',
+};
+
+/** Valor de fluxo em pt-BR: vírgula decimal, ponto de milhar ("-10.000" = −10.000). */
+const lerValorFluxo = (v: unknown) => lerNumeroPtBr(v);
 
 const BASIS_TOOLTIPS: Record<number, string> = {
   252: 'Dias úteis (exclui sábados, domingos e feriados). Padrão para CDI e Selic.',
@@ -147,6 +165,9 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
   const [basis, setBasis] = useState<number>(252);
   const [spreadMode, setSpreadMode] = useState<'none' | 'percentage' | 'additive'>('none');
   const [spreadValue, setSpreadValue] = useState<number>(0);
+  // CDI/Selic: índices diários brasileiros (spread aditivo em 252 dias úteis)
+  const isDailyBrIndex = indexType === 'CDI' || indexType === 'SELIC_META' || indexType === 'SELIC_OVER';
+  const additiveBaseLabel = isDailyBrIndex ? '252 d.u.' : indexType === 'SOFR' ? 'ACT/360' : `dias corridos/${basis === 360 ? 360 : 365}`;
   const [prefixedRate, setPrefixedRate] = useState<number>(0);
   const [prefixedRateMode, setPrefixedRateMode] = useState<RateMode>('aa');
   const [amortizations, setAmortizations] = useState<AmortizationEntry[]>([]);
@@ -158,11 +179,18 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
   }>({ open: false, requiredFrom: '', lastAvailableRate: null, lastAvailableDate: null });
 
   // T2 – DCF fields
-  const [dcfFlows, setDcfFlows] = useState<DCFCashFlow[]>([]);
-  const [showDcfModal, setShowDcfModal] = useState(false);
+  const [dcfRows, setDcfRows] = useState<FlowRow[]>(() => linhasVazias());
+  /** Linhas que já perderam o foco (o erro só aparece depois disso ou ao calcular) */
+  const [dcfTocados, setDcfTocados] = useState<Record<number, boolean>>({});
+  const [dcfTentouEnviar, setDcfTentouEnviar] = useState(false);
   const [discountRate, setDiscountRate] = useState<number>(0);
   const [discountRateMode, setDiscountRateMode] = useState<RateMode>('aa');
   const [referenceDate, setReferenceDate] = useState('');
+  const [hasPerpetuity, setHasPerpetuity] = useState(false);
+  const [perpGrowth, setPerpGrowth] = useState('');
+  const [perpGrowthMode, setPerpGrowthMode] = useState<RateMode>('aa');
+  const [perpPeriodicity, setPerpPeriodicity] = useState<Periodicity>('ANNUAL');
+  const [perpBase, setPerpBase] = useState('');
 
   // T3 – Grace period
   const [gracePeriodType, setGracePeriodType] = useState<GracePeriodType>('A');
@@ -178,8 +206,10 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
   const [remunerationRate, setRemunerationRate] = useState<number>(0);
   const [remunerationRateMode, setRemunerationRateMode] = useState<RateMode>('aa');
   const [numberOfPeriods, setNumberOfPeriods] = useState<number>(12);
+  const [installmentPeriodicity, setInstallmentPeriodicity] = useState<Periodicity>('MONTHLY');
   const [hasGracePeriod, setHasGracePeriod] = useState(false);
   const [ffGracePeriodType, setFfGracePeriodType] = useState<GracePeriodType>('A');
+  /** Carência em períodos da parcela (meses, trimestres…) */
   const [ffGracePeriodMonths, setFfGracePeriodMonths] = useState<number>(0);
 
   const [loading, setLoading] = useState(false);
@@ -212,10 +242,17 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
     setPrefixedRateMode('aa');
     setAmortizations([]);
     setPremises([]);
-    setDcfFlows([]);
+    setDcfRows(linhasVazias());
+    setDcfTocados({});
+    setDcfTentouEnviar(false);
     setDiscountRate(0);
     setDiscountRateMode('aa');
     setReferenceDate('');
+    setHasPerpetuity(false);
+    setPerpGrowth('');
+    setPerpGrowthMode('aa');
+    setPerpPeriodicity('ANNUAL');
+    setPerpBase('');
     setGracePeriodType('A');
     setGracePeriodEndDate('');
     setInterestRate(0);
@@ -225,24 +262,44 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
     setRemunerationRate(0);
     setRemunerationRateMode('aa');
     setNumberOfPeriods(12);
+    setInstallmentPeriodicity('MONTHLY');
     setHasGracePeriod(false);
     setFfGracePeriodType('A');
     setFfGracePeriodMonths(0);
     setError(null);
   };
 
+  // ── T2: leitura dos fluxos e da perpetuidade ──
+  const erroLinhaFluxo = (i: number): string | undefined => {
+    const r = dcfRows[i];
+    if (!r) return undefined;
+    const leitura = lerValorFluxo(r.amount);
+    if (leitura.tipo === 'erro') return leitura.mensagem;
+    if (leitura.tipo === 'ok' && !r.date) return 'Informe a data do fluxo.';
+    if (leitura.tipo === 'vazio' && r.date) return 'Informe o valor do fluxo.';
+    return undefined;
+  };
+  const erroLinhaVisivel = (i: number) => (dcfTentouEnviar || dcfTocados[i] ? erroLinhaFluxo(i) : undefined);
+
+  const fluxosDcf = (): { date: string; amount: number }[] =>
+    dcfRows.flatMap(r => {
+      const leitura = lerValorFluxo(r.amount);
+      return r.date && leitura.tipo === 'ok' ? [{ date: r.date, amount: leitura.valor }] : [];
+    });
+
+  const leituraBasePerpetuidade = lerValorFluxo(perpBase);
+  const crescimentoPerpetuidade = parseFloat(perpGrowth);
+
   const calcT4GraceEndDate = (): string => {
     if (!startDate || ffGracePeriodMonths <= 0) return '';
-    const d = new Date(startDate + 'T12:00:00');
-    d.setMonth(d.getMonth() + ffGracePeriodMonths);
-    return d.toISOString().slice(0, 10);
+    return somarMesesISO(startDate, ffGracePeriodMonths * MESES_POR_PERIODO[installmentPeriodicity]);
   };
 
   const buildRequest = (withPremises: FuturePremise[] = premises): CalculationRequest => {
     const base: CalculationRequest = {
       thesisType: thesis,
-      startDate: new Date(startDate + 'T12:00:00').toISOString(),
-      endDate: endDate ? new Date(endDate + 'T12:00:00').toISOString() : new Date(startDate + 'T12:00:00').toISOString(),
+      startDate: startDate + 'T12:00:00',
+      endDate: endDate ? endDate + 'T12:00:00' : startDate + 'T12:00:00',
       indexType: indexType as any,
       dayCountBasis: basis,
       currency: indexType === 'SOFR' ? 'USD' : 'BRL',
@@ -250,20 +307,26 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
     };
 
     if (thesis === 'VALOR_PRESENTE') {
+      const fluxos = fluxosDcf();
       return {
         ...base,
-        initialAmount: dcfFlows.reduce((s, f) => s + f.amount, 0),
-        cashFlows: dcfFlows.map(f => ({
-          id: f.id,
-          date: new Date(f.date + 'T12:00:00').toISOString(),
+        initialAmount: fluxos.reduce((s, f) => s + f.amount, 0),
+        cashFlows: fluxos.map(f => ({
+          date: f.date + 'T12:00:00',
           amount: f.amount,
-          label: f.label,
         })),
         discountRate: toAnnual(discountRate, discountRateMode),
         referenceDate: referenceDate
-          ? new Date(referenceDate + 'T12:00:00').toISOString()
+          ? referenceDate + 'T12:00:00'
           : base.startDate,
         dayCountBasis: basis,
+        perpetuity: hasPerpetuity
+          ? {
+              growthRate: toAnnual(crescimentoPerpetuidade, perpGrowthMode),
+              periodicity: perpPeriodicity,
+              baseCashFlow: leituraBasePerpetuidade.tipo === 'ok' ? leituraBasePerpetuidade.valor : undefined,
+            }
+          : undefined,
       };
     }
 
@@ -275,8 +338,9 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
         amortizationSystem,
         remunerationRate: toAnnual(remunerationRate, remunerationRateMode),
         numberOfPeriods,
+        installmentPeriodicity,
         gracePeriod: hasGracePeriod && graceEnd
-          ? { type: ffGracePeriodType, endDate: new Date(graceEnd + 'T12:00:00').toISOString() }
+          ? { type: ffGracePeriodType, endDate: graceEnd + 'T12:00:00' }
           : undefined,
       };
     }
@@ -286,20 +350,28 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
       ...base,
       initialAmount: amount,
       prefixedRate: indexType === 'PREFIXADA' ? toAnnual(prefixedRate, prefixedRateMode) : undefined,
-      spread: spreadMode !== 'none' ? { mode: spreadMode, value: spreadValue } : undefined,
+      spread: spreadMode !== 'none'
+        ? {
+            mode: spreadMode,
+            value: spreadValue,
+            // CDI/Selic + taxa: Fator de Spread B3 em 252 dias úteis
+            additiveBase: spreadMode === 'additive' && isDailyBrIndex ? 252 : undefined,
+          }
+        : undefined,
       amortizations: amortizations.map(a => ({
-        date: new Date(a.date + 'T12:00:00').toISOString(),
+        date: a.date + 'T12:00:00',
         type: a.type,
         value: a.value,
         periodicity: a.periodicity,
         periodicEndDate: a.periodicEndDate
-          ? new Date(a.periodicEndDate + 'T12:00:00').toISOString()
+          ? a.periodicEndDate + 'T12:00:00'
           : undefined,
         isPeriodicPercentage: a.isPeriodicPercentage,
+        direction: a.direction,
       })),
       futurePremises: withPremises.map(p => ({
-        startDate: new Date(p.startDate + 'T12:00:00').toISOString(),
-        endDate: new Date(p.endDate + 'T12:00:00').toISOString(),
+        startDate: p.startDate + 'T12:00:00',
+        endDate: p.endDate + 'T12:00:00',
         rate: p.rate,
       })),
     };
@@ -307,7 +379,7 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
     if (thesis === 'CORRECAO_COM_CARENCIA' && gracePeriodEndDate) {
       req.gracePeriod = {
         type: gracePeriodType,
-        endDate: new Date(gracePeriodEndDate + 'T12:00:00').toISOString(),
+        endDate: gracePeriodEndDate + 'T12:00:00',
       };
     }
 
@@ -321,9 +393,17 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
 
   const validate = (): string | null => {
     if (thesis === 'VALOR_PRESENTE') {
-      if (!dcfFlows.length) return 'Adicione ao menos um fluxo de caixa.';
+      if (dcfRows.some((_, i) => erroLinhaFluxo(i))) return 'Corrija os fluxos de caixa destacados.';
+      if (!fluxosDcf().length) return 'Adicione ao menos um fluxo de caixa.';
       if (!discountRate || discountRate <= 0) return 'Informe a taxa de desconto.';
       if (!startDate) return 'Informe a data de referência.';
+      if (hasPerpetuity) {
+        if (!Number.isFinite(crescimentoPerpetuidade)) return 'Informe o crescimento da perpetuidade (pode ser 0).';
+        if (toAnnual(crescimentoPerpetuidade, perpGrowthMode) >= toAnnual(discountRate, discountRateMode)) {
+          return 'Na perpetuidade, a taxa de desconto precisa ser maior que o crescimento.';
+        }
+        if (leituraBasePerpetuidade.tipo === 'erro') return `Fluxo base da perpetuidade: ${leituraBasePerpetuidade.mensagem}`;
+      }
       return null;
     }
     if (thesis === 'FLUXO_COMPLETO') {
@@ -343,6 +423,7 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
   };
 
   const submit = async (withPremises: FuturePremise[] = premises) => {
+    if (thesis === 'VALOR_PRESENTE') setDcfTentouEnviar(true);
     const validationError = validate();
     if (validationError) { setError(validationError); return; }
 
@@ -353,7 +434,7 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
       const result = await runCalculation(buildRequest(withPremises));
       onResult(result);
     } catch (err: any) {
-      if (axios.isAxiosError(err) && err.response?.status === 422) {
+      if (axios.isAxiosError(err) && err.response?.status === 422 && err.response.data?.premisesRequiredFrom) {
         const data = err.response.data;
         setPremisesModal({
           open: true,
@@ -479,7 +560,7 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
                         value={referenceDate || startDate}
                         onChange={(iso) => { setReferenceDate(iso); setStartDate(iso); }}
                       />
-                      <p className="text-xs text-muted-foreground">Data base para o desconto (geralmente hoje).</p>
+                      <p className="text-xs text-muted-foreground">Data base para o desconto (geralmente hoje). Fluxo nesta data entra sem desconto (ex.: preço pago).</p>
                     </div>
                     <div className="space-y-1.5">
                       <Label>Taxa de Desconto ({discountRateMode === 'aa' ? '% a.a.' : '% a.m.'})</Label>
@@ -516,20 +597,84 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
                         ))}
                       </div>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label>Fluxos de Caixa</Label>
-                        {dcfFlows.length > 0 && <Badge variant="secondary" className="ml-2">{dcfFlows.length}</Badge>}
-                      </div>
-                      <Button variant="outline" size="sm" onClick={() => setShowDcfModal(true)} className="gap-1.5">
-                        <Plus className="h-4 w-4" /> Gerenciar
-                      </Button>
+                    <div className="space-y-1.5">
+                      <Label>
+                        Fluxos de Caixa
+                        {fluxosDcf().length > 0 && <Badge variant="secondary" className="ml-2">{fluxosDcf().length}</Badge>}
+                      </Label>
+                      <FlowsEditor
+                        rows={dcfRows}
+                        onChange={setDcfRows}
+                        erroLinha={erroLinhaVisivel}
+                        onBlurLinha={i => setDcfTocados(t => (t[i] ? t : { ...t, [i]: true }))}
+                      />
+                      {fluxosDcf().length > 0 && (
+                        <div className="text-xs text-muted-foreground">
+                          Total nominal: R$ {fluxosDcf().reduce((s, f) => s + f.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </div>
+                      )}
                     </div>
-                    {dcfFlows.length > 0 && (
-                      <div className="text-xs text-muted-foreground">
-                        Total nominal: R$ {dcfFlows.reduce((s, f) => s + f.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+
+                    {/* Perpetuidade (valor terminal de Gordon) */}
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox" id="dcf-perpetuity"
+                          checked={hasPerpetuity}
+                          onChange={e => setHasPerpetuity(e.target.checked)}
+                          className="h-4 w-4 rounded border-border"
+                        />
+                        <Label htmlFor="dcf-perpetuity" className="cursor-pointer">Perpetuidade (valor terminal)</Label>
                       </div>
-                    )}
+                      {hasPerpetuity && (
+                        <div className="pl-6 space-y-3 border-l-2 border-cyan-500/30">
+                          <div className="space-y-1.5">
+                            <Label className="text-sm">Crescimento na perpetuidade ({perpGrowthMode === 'aa' ? '% a.a.' : '% a.m.'})</Label>
+                            <div className="flex gap-2">
+                              <Input
+                                type="number" step={0.01}
+                                value={perpGrowth}
+                                onChange={e => setPerpGrowth(e.target.value)}
+                                placeholder={perpGrowthMode === 'aa' ? 'ex: 3' : 'ex: 0.25'}
+                                className="font-mono flex-1"
+                              />
+                              <RateModeToggle value={perpGrowthMode} onChange={setPerpGrowthMode} />
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-sm">Periodicidade do fluxo</Label>
+                            <Select value={perpPeriodicity} onValueChange={v => setPerpPeriodicity(v as Periodicity)}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {(Object.keys(PERIODICITY_LABELS) as Periodicity[]).map(p => (
+                                  <SelectItem key={p} value={p}>{PERIODICITY_LABELS[p]}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-sm">
+                              Fluxo base <span className="text-muted-foreground font-normal">(opcional)</span>
+                            </Label>
+                            <Input
+                              type="text" inputMode="decimal" autoComplete="off"
+                              value={perpBase}
+                              onChange={e => setPerpBase(e.target.value)}
+                              aria-invalid={leituraBasePerpetuidade.tipo === 'erro' ? true : undefined}
+                              placeholder="padrão: último fluxo"
+                              className="font-mono tabular-nums"
+                            />
+                            {leituraBasePerpetuidade.tipo === 'erro' && (
+                              <p className="text-[10px] text-destructive">{leituraBasePerpetuidade.mensagem}</p>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            O fluxo base se repete a cada período após o último fluxo, crescendo g.
+                            Valor terminal na data do último fluxo = fluxo base × (1 + g) ÷ (taxa − g), com as taxas equivalentes ao período.
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </>
                 )}
 
@@ -565,15 +710,33 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
                         <RateModeToggle value={remunerationRateMode} onChange={setRemunerationRateMode} />
                       </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <Label>Prazo (meses)</Label>
-                      <Input
-                        type="number" min={1} max={600}
-                        value={numberOfPeriods}
-                        onChange={e => setNumberOfPeriods(parseInt(e.target.value) || 12)}
-                        className="font-mono"
-                      />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label>Periodicidade</Label>
+                        <Select value={installmentPeriodicity} onValueChange={v => setInstallmentPeriodicity(v as Periodicity)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {(['MONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'ANNUAL'] as Periodicity[]).map(p => (
+                              <SelectItem key={p} value={p}>{PERIODICITY_LABELS[p]}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Nº de parcelas</Label>
+                        <Input
+                          type="number" min={1} max={600}
+                          value={numberOfPeriods}
+                          onChange={e => setNumberOfPeriods(parseInt(e.target.value) || 12)}
+                          className="font-mono"
+                        />
+                      </div>
                     </div>
+                    {installmentPeriodicity !== 'MONTHLY' && (
+                      <p className="text-xs text-muted-foreground -mt-2">
+                        Prazo de {numberOfPeriods * MESES_POR_PERIODO[installmentPeriodicity]} meses; a taxa vira a equivalente ao período.
+                      </p>
+                    )}
                     <div className="space-y-2">
                       <Label>Sistema de Amortização</Label>
                       <div className="grid grid-cols-1 gap-1.5">
@@ -606,7 +769,7 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
                       {hasGracePeriod && (
                         <div className="pl-6 space-y-3 border-l-2 border-orange-500/30">
                           <div className="space-y-1.5">
-                            <Label className="text-sm">Duração da Carência (meses)</Label>
+                            <Label className="text-sm">Duração da Carência ({PERIODO_PLURAL[installmentPeriodicity]})</Label>
                             <Input
                               type="number" min={0} max={numberOfPeriods - 1}
                               value={ffGracePeriodMonths}
@@ -794,7 +957,7 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
                           <span className="text-sm text-muted-foreground">
                             {spreadMode === 'percentage'
                               ? `% do ${INDEX_LABELS[indexType]}`
-                              : `% a.a. sobre ${INDEX_LABELS[indexType]}`}
+                              : `% a.a. sobre ${INDEX_LABELS[indexType]} (${additiveBaseLabel})`}
                           </span>
                         </div>
                       )}
@@ -969,12 +1132,6 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
         lastAvailableDate={premisesModal.lastAvailableDate}
       />
 
-      <DCFFlowsModal
-        open={showDcfModal}
-        onOpenChange={setShowDcfModal}
-        flows={dcfFlows}
-        onChange={setDcfFlows}
-      />
     </>
   );
 }

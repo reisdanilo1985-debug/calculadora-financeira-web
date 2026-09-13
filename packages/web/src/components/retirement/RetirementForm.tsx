@@ -78,7 +78,10 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
               onChange={e => set({ expectativaVida: +e.target.value })} />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Gênero</Label>
+            <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+              Gênero
+              <span title="Usado nas regras do INSS (EC 103/2019): idade mínima 65 (H) / 62 (M) e tempo mínimo 20 (H) / 15 (M) anos. Não há tábua de mortalidade: o horizonte é a expectativa de vida informada."><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
+            </Label>
             <select
               className="w-full h-9 rounded-md border border-input bg-background/50 px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               value={form.genero}
@@ -174,7 +177,7 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
                 Tempo de Contribuição (anos)
-                <span title="Anos já contribuídos. O motor soma os anos restantes até a aposentadoria."><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
+                <span title="Anos já contribuídos. O motor soma os anos restantes até a aposentadoria (sem contribuições depois dela). O benefício só entra na projeção a partir dos 65 (H) / 62 (M) anos, com teto e salário mínimo de 2026."><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
               </Label>
               <Input type="number" value={form.tempoContribuicaoAnos || ''}
                 onChange={e => set({ tempoContribuicaoAnos: +e.target.value || 0 })}
@@ -196,7 +199,7 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
               Gasto Mensal Desejado (R$ de hoje)
-              <span title="Valor em R$ atuais. O motor corrige pela IPCA até a data de aposentadoria."><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
+              <span title="Valor em R$ de hoje. O motor trabalha em termos reais (descontada a inflação): gastos, rendas e patrimônio ficam em poder de compra atual."><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
             </Label>
             <Input type="number" value={form.gastoMensalDesejado || ''}
               onChange={e => set({ gastoMensalDesejado: +e.target.value || 0 })}
@@ -250,7 +253,7 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
               Meta IPCA (% a.a.)
-              <span title="Inflação esperada para correção dos gastos. Meta CMN 2025: 3,0%."><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
+              <span title="O cálculo é em R$ de hoje (termos reais); a Meta IPCA converte o patrimônio na aposentadoria para R$ nominais. Meta contínua do CMN: 3,0% a.a. (Resolução CMN 5.141/2024)."><HelpCircle className="h-3 w-3 text-muted-foreground/60" /></span>
             </Label>
             <div className="relative">
               <Input type="number" step="0.1" value={form.ipcaMeta || ''}
@@ -285,7 +288,7 @@ export function RetirementForm({ onCalculate, loading }: RetirementFormProps) {
           {loading ? 'Simulando...' : 'Simular Aposentadoria'}
         </Button>
         <p className="text-[10px] text-center text-muted-foreground mt-3 uppercase tracking-tighter opacity-60">
-          Monte Carlo · EC 103/2019 · Damodaran Risk Premium · Tábua IBGE 2024
+          Monte Carlo com semente · EC 103/2019 · Portaria MPS/MF 13/2026
         </p>
       </div>
     </form>

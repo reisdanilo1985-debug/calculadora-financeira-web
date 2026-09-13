@@ -36,6 +36,27 @@ export declare function equivalente(iaa: number, fracaoAno: number): number;
 export declare function nominalParaEfetiva(nominal: number, m: number): number;
 /** Taxa efetiva anual → nominal (linear, m capitalizações). */
 export declare function efetivaParaNominal(iaa: number, m: number): number;
+/** TDI = (1 + CDI)^(1/252) − 1 — taxa DI diária implícita na taxa anual base 252. */
+export declare function taxaDiDiaria(cdiAa: Decimal.Value): Decimal;
+/** % do CDI (B3) equivalente a uma taxa a.a. base 252: p = [(1 + taxa)^(1/252) − 1] / TDI. */
+export declare function pctCdiB3(taxaAa: Decimal.Value, cdiAa: Decimal.Value): Decimal;
+/** Taxa a.a. base 252 do acúmulo diário a p% do CDI (B3): (1 + p·TDI)^252 − 1. */
+export declare function taxaDePctCdiB3(pct: Decimal.Value, cdiAa: Decimal.Value): Decimal;
+/** Fuso de referência das datas civis da aplicação. */
+export declare const FUSO_BR = "America/Sao_Paulo";
+/** Data civil 'AAAA-MM-DD' de um instante no fuso dado (padrão America/Sao_Paulo). */
+export declare function isoCivilNoFuso(instante: Date, timeZone?: string): string;
+/**
+ * Lê uma data textual como DATA CIVIL (Date à meia-noite local), igual em
+ * qualquer fuso de servidor:
+ *  - 'AAAA-MM-DD' ou 'DD/MM/AAAA'                → a própria data;
+ *  - 'AAAA-MM-DDThh:mm[:ss[.fff]]' sem fuso        → a data escrita (hora de parede);
+ *  - com 'Z' ou deslocamento (ex.: '-03:00')       → a data civil do instante em
+ *    America/Sao_Paulo (ou no fuso informado); com `timeZone = null`, ignora o
+ *    fuso e vale a data escrita (regra "prefixo AAAA-MM-DD").
+ * Formato não reconhecido ou data inexistente → null.
+ */
+export declare function parseDataCivil(valor: string, timeZone?: string | null): Date | null;
 export type MetodoInterpolacao = 'linear' | 'loglinear_df';
 /**
  * Interpola a taxa de uma curva num prazo arbitrário.
@@ -56,8 +77,21 @@ export interface FluxoDatado {
 /** Σ CF_k / (1+taxa)^((data_k - data_0)/365). Datas relativas ao primeiro fluxo. */
 export declare function xnpv(taxa: number, fluxos: FluxoDatado[]): number;
 /**
+ * Número de trocas de sinal do fluxo em ordem cronológica. Fluxos no mesmo dia
+ * são somados antes (entram com o mesmo expoente no XNPV); totais nulos são
+ * ignorados.
+ *
+ * Regra de sinais de Descartes: há no máximo tantas TIRs quanto trocas de sinal.
+ * Com MAIS DE UMA troca a TIR pode não ser única — a raiz devolvida por `xirr`
+ * depende do chute — e a TIR não serve como critério de decisão (use o VPL).
+ */
+export declare function trocasDeSinal(fluxos: FluxoDatado[]): number;
+/**
  * Taxa interna de retorno de fluxos datados (equivalente a XIRR do Excel).
  * Newton-Raphson com fallback para bissecção. Retorna taxa efetiva anual (fração).
+ *
+ * Atenção: com mais de uma troca de sinal (ver `trocasDeSinal`) pode haver mais
+ * de uma TIR; esta função devolve UMA delas (a que o chute alcança).
  */
 export declare function xirr(fluxos: FluxoDatado[], guess?: number): number;
 /** Parcela constante (PMT do Excel): pv·i / (1 − (1+i)^(−n)). */

@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, Wand2, Pencil } from 'lucide-react';
+import { Wand2, Pencil } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { DateInputBR } from '@/components/ui/date-input-br';
+import { FlowsEditor, FlowRow, linhasVazias } from '@/components/ui/flows-editor';
 import {
   Select,
   SelectContent,
@@ -12,7 +13,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { PremissasSnapshot } from '@/lib/api';
-import { CalcDef, FieldDef } from './calcConfig';
+import { formatarNumeroPtBr } from '@/lib/numeroPtBr';
+import { CalcDef, FieldDef, erroCampo, erroValorFluxo } from './calcConfig';
+
+/**
+ * Estado do campo → texto exibido. Números (defaults, premissas) saem em pt-BR
+ * ("14,4"); o que o usuário digitou é mostrado como está e lido no buildBody
+ * pelas regras pt-BR (vírgula decimal, ponto de milhar).
+ */
+const paraTexto = (v: unknown): string =>
+  typeof v === 'number' ? formatarNumeroPtBr(v) : v == null ? '' : String(v);
 
 interface Props {
   calc: CalcDef;
@@ -24,7 +34,7 @@ interface Props {
 function initialValues(calc: CalcDef): Record<string, any> {
   const v: Record<string, any> = {};
   for (const f of calc.fields) {
-    if (f.kind === 'flows') v[f.key] = [{ date: '', amount: '' }, { date: '', amount: '' }];
+    if (f.kind === 'flows') v[f.key] = linhasVazias();
     else v[f.key] = f.default ?? '';
   }
   return v;
@@ -39,14 +49,20 @@ function initialAuto(calc: CalcDef): Record<string, boolean> {
 export function TesourariaForm({ calc, snapshot, loading, onSubmit }: Props) {
   const [values, setValues] = useState<Record<string, any>>(() => initialValues(calc));
   const [auto, setAuto] = useState<Record<string, boolean>>(() => initialAuto(calc));
+  /** Campos que já perderam o foco (o erro só aparece depois disso ou ao calcular). */
+  const [tocados, setTocados] = useState<Record<string, boolean>>({});
+  const [tentouEnviar, setTentouEnviar] = useState(false);
 
   // Reinicia ao trocar de calculadora
   useEffect(() => {
     setValues(initialValues(calc));
     setAuto(initialAuto(calc));
+    setTocados({});
+    setTentouEnviar(false);
   }, [calc.nome]);
 
   const setVal = (key: string, val: any) => setValues(prev => ({ ...prev, [key]: val }));
+  const tocar = (key: string) => setTocados(prev => (prev[key] ? prev : { ...prev, [key]: true }));
 
   /** Valor a exibir num campo (considera auto-fill da premissa). */
   const displayVal = (f: FieldDef): any => {
@@ -62,14 +78,45 @@ export function TesourariaForm({ calc, snapshot, loading, onSubmit }: Props) {
     [calc, values]
   );
 
-  const handleSubmit = () => {
-    // Resolve premissas em modo auto
+  /** Valores que o buildBody recebe: premissas em modo auto já resolvidas. */
+  const resolverValores = (): Record<string, any> => {
     const merged = { ...values };
     for (const f of calc.fields) {
       if (f.premise && auto[f.key] && snapshot) {
         const p = f.premise(snapshot, values);
         if (p != null && isFinite(p)) merged[f.key] = p;
       }
+    }
+    return merged;
+  };
+
+  /** Erros de leitura pt-BR por campo visível (fluxos: chave `campo.linha`). */
+  const validar = (merged: Record<string, any>): Record<string, string> => {
+    const e: Record<string, string> = {};
+    for (const f of visibleFields) {
+      if (f.kind === 'flows') {
+        ((merged[f.key] || []) as FlowRow[]).forEach((r, i) => {
+          const msg = erroValorFluxo(r.amount);
+          if (msg) e[`${f.key}.${i}`] = msg;
+        });
+      } else {
+        const msg = erroCampo(f, merged[f.key]);
+        if (msg) e[f.key] = msg;
+      }
+    }
+    return e;
+  };
+
+  const erros = validar(resolverValores());
+  const erroVisivel = (key: string): string | undefined =>
+    tentouEnviar || tocados[key] ? erros[key] : undefined;
+
+  const handleSubmit = () => {
+    const merged = resolverValores();
+    // Entrada inválida/ambígua bloqueia o envio e aparece no próprio campo.
+    if (Object.keys(validar(merged)).length > 0) {
+      setTentouEnviar(true);
+      return;
     }
     onSubmit(calc.buildBody(merged));
   };
@@ -128,17 +175,30 @@ export function TesourariaForm({ calc, snapshot, loading, onSubmit }: Props) {
           ) : f.kind === 'date' ? (
             <DateInputBR value={values[f.key] || ''} onChange={iso => setVal(f.key, iso)} placeholder="dd/mm/aaaa" />
           ) : f.kind === 'flows' ? (
-            <FlowsEditor rows={values[f.key] || []} onChange={rows => setVal(f.key, rows)} />
+            <FlowsEditor
+              rows={values[f.key] || []}
+              onChange={rows => setVal(f.key, rows)}
+              erroLinha={i => erroVisivel(`${f.key}.${i}`)}
+              onBlurLinha={i => tocar(`${f.key}.${i}`)}
+            />
           ) : (
+            // type="text": o type="number" do navegador lê "-10.000" como −10.
+            // A leitura pt-BR é feita no buildBody (mesma regra da validação).
             <Input
-              type={f.kind === 'numlist' ? 'text' : 'number'}
+              type="text"
               inputMode={f.kind === 'numlist' ? 'text' : 'decimal'}
+              autoComplete="off"
               className="font-mono tabular-nums"
-              value={displayVal(f) ?? ''}
+              value={paraTexto(displayVal(f))}
               disabled={!!(f.premise && auto[f.key])}
               onChange={e => setVal(f.key, e.target.value)}
+              onBlur={() => tocar(f.key)}
+              aria-invalid={erroVisivel(f.key) ? true : undefined}
               placeholder={f.help}
             />
+          )}
+          {f.kind !== 'flows' && erroVisivel(f.key) && (
+            <p className="text-[10px] text-destructive">{erroVisivel(f.key)}</p>
           )}
           {f.help && f.kind !== 'numlist' && (
             <p className="text-[10px] text-muted-foreground/70">{f.help}</p>
@@ -149,52 +209,6 @@ export function TesourariaForm({ calc, snapshot, loading, onSubmit }: Props) {
       <Button onClick={handleSubmit} disabled={loading} className="w-full mt-2">
         {loading ? 'Calculando…' : 'Calcular'}
       </Button>
-    </div>
-  );
-}
-
-// ───────────────────────────── Editor de fluxos (TIR/VPL) ────────────────────
-
-interface FlowRow {
-  date: string;
-  amount: string | number;
-}
-
-function FlowsEditor({ rows, onChange }: { rows: FlowRow[]; onChange: (r: FlowRow[]) => void }) {
-  const update = (i: number, patch: Partial<FlowRow>) =>
-    onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
-  const add = () => onChange([...rows, { date: '', amount: '' }]);
-  const remove = (i: number) => onChange(rows.filter((_, idx) => idx !== i));
-
-  return (
-    <div className="space-y-2">
-      {rows.map((r, i) => (
-        <div key={i} className="flex items-center gap-2">
-          <div className="flex-1">
-            <DateInputBR value={r.date || ''} onChange={iso => update(i, { date: iso })} placeholder="dd/mm/aaaa" />
-          </div>
-          <Input
-            type="number"
-            inputMode="decimal"
-            className="flex-1 font-mono tabular-nums"
-            value={r.amount}
-            onChange={e => update(i, { amount: e.target.value })}
-            placeholder="valor (± )"
-          />
-          <button
-            type="button"
-            onClick={() => remove(i)}
-            className="text-muted-foreground hover:text-destructive p-1"
-            title="Remover"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </div>
-      ))}
-      <Button type="button" variant="outline" size="sm" onClick={add} className="w-full">
-        <Plus className="h-3.5 w-3.5 mr-1" /> Adicionar fluxo
-      </Button>
-      <p className="text-[10px] text-muted-foreground/70">Saídas negativas, entradas positivas.</p>
     </div>
   );
 }

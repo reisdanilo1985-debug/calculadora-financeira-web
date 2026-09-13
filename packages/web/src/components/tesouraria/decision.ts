@@ -10,6 +10,11 @@
  * na língua da decisão de capital. Determinística, sem LLM.
  *
  * Unidades: body/result chegam em FRAÇÃO decimal (como o core).
+ *
+ * Régua do "% do CDI": SEMPRE a convenção B3 que o motor devolve (percentual
+ * sobre a taxa DI diária — pctCdi de pre-cdi/cdi-spread, pctCdiB3Comp do
+ * cross-ccy, pctCdiB3 do IPCA+). A razão anual taxa ÷ CDI é aproximação e não
+ * entra em frase nem em limiar de sinal.
  */
 
 export type Sinal = 'verde' | 'amarelo' | 'vermelho' | 'info';
@@ -69,7 +74,7 @@ const DECISORES: Record<string, DecisorFn> = {
       return {
         sinal: 'info',
         frase: `${fn(body.pctCdi * 100, 1)}% do CDI equivale a um pré de ${fp(r.preAa)} a.a. no CDI atual (${fp(body.cdiAa)}).`,
-        criterio: 'Equivalência no nível atual do CDI — se o CDI mudar, o pré equivalente muda junto.',
+        criterio: 'Equivalência no nível atual do CDI pela convenção B3 (o percentual incide sobre a taxa DI diária: pré = (1 + p·TDI)^252 − 1) — se o CDI mudar, o pré equivalente muda junto.',
         pontes: [
           { eixo: 'risco', texto: 'Fixar no pré equivalente trava o custo; manter % do CDI deixa o custo flutuar com a Selic.' },
         ],
@@ -79,7 +84,7 @@ const DECISORES: Record<string, DecisorFn> = {
     return {
       sinal: 'info',
       frase: `Pré de ${fp(body.preAa)} = ${fn(r.pctCdi * 100, 1)}% do CDI — ${acima ? 'acima' : 'abaixo'} do CDI em ${fp(Math.abs(r.spreadCompSobreCdi))} (composto).`,
-      criterio: 'Referência: 100% do CDI. Acima = custo maior que o CDI (caro como dívida, bom como aplicação); abaixo, o inverso.',
+      criterio: 'Referência: 100% do CDI, pela convenção B3 (percentual sobre a taxa DI diária). Acima = custo maior que o CDI (caro como dívida, bom como aplicação); abaixo, o inverso.',
       pontes: [
         { eixo: 'custo', texto: 'Use o % do CDI como régua única para comparar esta taxa com suas linhas pós-fixadas.' },
       ],
@@ -91,7 +96,7 @@ const DECISORES: Record<string, DecisorFn> = {
       return {
         sinal: 'info',
         frase: `${fn(body.pctCdi * 100, 1)}% do CDI equivale a CDI + ${fp(r.spreadComp)} (composto) no CDI atual.`,
-        criterio: 'Equivalência válida para o nível atual do CDI — % do CDI amplifica quando a Selic sobe.',
+        criterio: 'Equivalência válida para o nível atual do CDI, com o % do CDI pela convenção B3 (sobre a taxa DI diária) — % do CDI amplifica quando a Selic sobe.',
         pontes: [
           { eixo: 'risco', texto: 'CDI + spread mantém o adicional fixo; % do CDI aumenta o custo absoluto quando o CDI sobe.' },
         ],
@@ -100,7 +105,7 @@ const DECISORES: Record<string, DecisorFn> = {
     return {
       sinal: 'info',
       frase: `CDI + ${fp(body.spreadAa)} custa ${fp(r.totalComp)} a.a. — o mesmo que ${fn(r.pctCdiComp * 100, 1)}% do CDI hoje.`,
-      criterio: 'Conversão entre convenções no CDI informado; use a composta para contratos com capitalização diária.',
+      criterio: 'Conversão entre convenções no CDI informado; o % do CDI segue a convenção B3 (sobre a taxa DI diária). Use a composta para contratos com capitalização diária.',
       pontes: [
         { eixo: 'custo', texto: 'Converta todas as propostas para UMA convenção antes de escolher a mais barata.' },
       ],
@@ -108,11 +113,13 @@ const DECISORES: Record<string, DecisorFn> = {
   },
 
   'cross-ccy': (body, r) => {
+    // Prazo usado pelo motor (B3: CDI em du/252; cupom e spread lineares em dc/360).
+    const noPrazo = r.prazoDu != null && r.prazoDc != null ? ` no prazo de ${fn(r.prazoDu, 0)} du / ${fn(r.prazoDc, 0)} dc` : '';
     // Direção inversa: CDI + spread → moeda + spread equivalente.
     if (body.modo === 'cdiParaMoeda' || r.spreadEstrangeiroComp != null) {
       return {
         sinal: 'info',
-        frase: `CDI + ${fp(body.spreadLocalAa)} equivale, sob hedge completo, a captar em moeda + ${fp(r.spreadEstrangeiroComp)} (linear ${fp(r.spreadEstrangeiroLin)}).`,
+        frase: `CDI + ${fp(body.spreadLocalAa)} equivale, sob hedge completo${noPrazo}, a captar em moeda + ${fp(r.spreadEstrangeiroComp)} (linear ${fp(r.spreadEstrangeiroLin)}).`,
         criterio: `Régua de negociação: qualquer proposta externa com spread ABAIXO de ${fp(r.spreadEstrangeiroComp)} bate o seu CDI + ${fp(body.spreadLocalAa)} depois do hedge. O elo é o cupom cambial (${fp(body.cupomEstrangeiroAa)}).`,
         pontes: [
           { eixo: 'custo', texto: `Use ${fp(r.spreadEstrangeiroComp)} como teto de spread ao cotar dívida externa — acima disso, o funding local é mais barato.` },
@@ -120,13 +127,16 @@ const DECISORES: Record<string, DecisorFn> = {
         ],
       };
     }
-    const pct = r.pctCdiComp;
+    // Régua B3 (percentual sobre a taxa DI diária). Sem ela não há sinal: a razão
+    // anual pctCdiComp é só aproximação e não pode decidir 100%/115%.
+    const pct = r.pctCdiB3Comp;
+    if (typeof pct !== 'number' || !isFinite(pct)) return null;
     const sinal: Sinal = pct < 1 ? 'verde' : pct <= 1.15 ? 'amarelo' : 'vermelho';
     const acimaCdi = r.spreadSobreCdiComp >= 0;
     return {
       sinal,
-      frase: `Captar a ${fp(body.spreadEstrangeiroAa)} em moeda + hedge completo sai por ${fn(pct * 100, 1)}% do CDI — ou CDI ${acimaCdi ? '+' : '−'} ${fp(Math.abs(r.spreadSobreCdiComp))} (${fp(r.preEquivComp)} a.a. pré).`,
-      criterio: `Sinal: 🟢 abaixo de 100% do CDI · 🟡 até 115% · 🔴 acima. Spread de equilíbrio (= 100% do CDI): ${fp(r.spreadEquilibrio)} — spreads externos abaixo disso batem o funding local.`,
+      frase: `Captar a ${fp(body.spreadEstrangeiroAa)} em moeda + hedge completo sai por ${fn(pct * 100, 1)}% do CDI — ou CDI ${acimaCdi ? '+' : '−'} ${fp(Math.abs(r.spreadSobreCdiComp))} (${fp(r.preEquivComp)} a.a. pré)${noPrazo}.`,
+      criterio: `Sinal: 🟢 abaixo de 100% do CDI · 🟡 até 115% · 🔴 acima — % do CDI pela convenção B3 (sobre a taxa DI diária). Spread de equilíbrio (= 100% do CDI): ${fp(r.spreadEquilibrio)} — spreads externos abaixo disso batem o funding local.`,
       pontes: [
         { eixo: 'custo', texto: `Compare CDI ${acimaCdi ? '+' : '−'} ${fp(Math.abs(r.spreadSobreCdiComp))} (= ${fn(pct * 100, 1)}% do CDI) com o custo das suas linhas locais para decidir onde captar.` },
         { eixo: 'risco', texto: 'Com o hedge completo embutido no cálculo, não sobra risco cambial — sobra só o custo.' },
@@ -138,8 +148,8 @@ const DECISORES: Record<string, DecisorFn> = {
     if (r.breakevenInf == null) {
       return {
         sinal: 'info',
-        frase: `IPCA+ ${fp(body.realAa)} com inflação de ${fp(body.ipcaAa)} equivale a ${fp(r.nominalAa)} nominal — ${fn(r.pctCdi * 100, 1)}% do CDI.`,
-        criterio: 'Composição de Fisher com a inflação projetada informada; sem pré de mercado, não há breakeven para comparar.',
+        frase: `IPCA+ ${fp(body.realAa)} com inflação de ${fp(body.ipcaAa)} equivale a ${fp(r.nominalAa)} nominal — ${fn(r.pctCdiB3 * 100, 1)}% do CDI.`,
+        criterio: 'Composição de Fisher com a inflação projetada informada; % do CDI pela convenção B3 (sobre a taxa DI diária). Sem pré de mercado, não há breakeven para comparar.',
         pontes: [
           { eixo: 'custo', texto: 'Informe o pré de mercado para ver o breakeven — a inflação que iguala IPCA+ e pré.' },
         ],
@@ -188,7 +198,9 @@ const DECISORES: Record<string, DecisorFn> = {
     return {
       sinal: 'info',
       frase: `DV01 de ${fm(r.dv01)}: se a curva subir 100 bps, a posição perde ~${fm(impacto100)} (${fn(r.modifiedDuration, 1)}% do valor). Duration de ${fn(r.macaulayDuration, 1)} anos.`,
-      criterio: 'Informativo: impacto linear por duration; para choques grandes, a convexidade ameniza a perda e amplifica o ganho.',
+      criterio: `Informativo: impacto linear por duration; para choques grandes, a convexidade ameniza a perda e amplifica o ganho.${
+        r.convencao ? ` Convenção do cupom — ${r.convencao}.` : ''
+      }`,
       pontes: [
         { eixo: 'risco', texto: `Este é o tamanho do seu risco de curva em R$ por bp — a régua para dimensionar hedge (DV01 exposição ÷ DV01 do contrato).` },
         { eixo: 'capital', texto: 'Posições longas de duration sofrem mais na alta de juros — case a duration do ativo com a do passivo.' },
@@ -252,6 +264,32 @@ const DECISORES: Record<string, DecisorFn> = {
   'tir-vpl': (body, r) => {
     const temVpl = r.vpl != null;
     const temCusto = body.custoCapital != null;
+
+    // TIR múltipla (mais de uma troca de sinal): a TIR não é régua — decide o VPL.
+    if (r.alertaTirMultipla) {
+      const trocas = `${fn(r.trocasDeSinal, 0)} trocas de sinal`;
+      if (temCusto && r.vplCustoCapital != null) {
+        const aceitar = r.veredito === 'Aceitar';
+        return {
+          sinal: aceitar ? 'verde' : 'vermelho',
+          frase: `TIR múltipla (${trocas}): a TIR de ${fp(r.tirAnual)} a.a. não serve de régua. Pelo VPL ao custo de capital (${fp(body.custoCapital)}), ${fm(r.vplCustoCapital)} — ${aceitar ? 'CRIA' : 'NÃO cria'} valor.`,
+          criterio: 'Critério: com mais de uma troca de sinal pode haver mais de uma TIR (regra de Descartes), e comparar a TIR com o custo pode inverter a decisão. Vale o VPL ao custo de capital: acima de zero cria valor; abaixo, destrói.',
+          pontes: [
+            { eixo: 'capital', texto: aceitar ? 'Descontado ao custo do dinheiro, o fluxo tem valor presente positivo — a operação cria valor.' : 'Descontado ao custo do dinheiro, o fluxo tem valor presente negativo — a operação destrói valor.' },
+            { eixo: 'risco', texto: 'Saídas depois de entradas (ex.: desmobilização, garantia a devolver) fazem o fluxo trocar de sinal mais de uma vez — confira o VPL em mais de uma taxa.' },
+          ],
+        };
+      }
+      return {
+        sinal: 'amarelo',
+        frase: `Atenção: TIR múltipla (${trocas}) — a TIR de ${fp(r.tirAnual)} a.a. é só uma das possíveis${temVpl ? `; VPL de ${fm(r.vpl)} na taxa de desconto` : ''}.`,
+        criterio: 'Com mais de uma troca de sinal pode haver mais de uma TIR (regra de Descartes). Informe o custo de capital para decidir pelo VPL.',
+        pontes: [
+          { eixo: 'custo', texto: 'Não compare esta TIR com outras taxas: a régua é o VPL ao custo de capital.' },
+        ],
+      };
+    }
+
     if (temCusto) {
       const aceitar = r.veredito === 'Aceitar';
       return {

@@ -3,7 +3,9 @@ import { Landmark, RefreshCw, CheckCircle2, AlertTriangle, Calculator } from 'lu
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -14,7 +16,7 @@ import {
   refreshPremissasTesouraria,
   runTesourariaCalc,
 } from '@/lib/api';
-import { CALCULADORES, getCalcByNome } from './calcConfig';
+import { CALCULADORES, GRUPOS, getCalcByNome } from './calcConfig';
 import { TesourariaForm } from './TesourariaForm';
 import { DecisionView } from './DecisionView';
 
@@ -104,10 +106,17 @@ export function TesourariaPanel() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {CALCULADORES.map(c => (
-                  <SelectItem key={c.nome} value={c.nome}>
-                    {c.titulo}
-                  </SelectItem>
+                {GRUPOS.map(grupo => (
+                  <SelectGroup key={grupo}>
+                    <SelectLabel className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                      {grupo}
+                    </SelectLabel>
+                    {CALCULADORES.filter(c => c.grupo === grupo).map(c => (
+                      <SelectItem key={c.nome} value={c.nome}>
+                        {c.titulo}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 ))}
               </SelectContent>
             </Select>

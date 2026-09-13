@@ -11,8 +11,24 @@ import {
 import { RetirementResultData, RetirementYearRow } from '@/lib/api';
 import { RetirementMemory } from './RetirementMemory';
 
+/**
+ * Campos acrescentados pelo motor na versão aposentadoria-mc 2.x (opcionais para tolerar API antiga).
+ * Mantidos aqui para não alterar os tipos compartilhados de `@/lib/api`.
+ */
+type RetirementResultV2 = RetirementResultData & Partial<{
+  versaoModelo: string;
+  semente: number;
+  numeroSimulacoes: number;
+  idadeFinal: number;
+  beneficioINSSProjetadoMensal: number;
+  idadeInicioINSS: number | null;
+  rendaNecessariaPatrimonioMensal: number;
+  ipcaMeta: number;
+  patrimonioAcumuladoAposentadoriaNominal: number;
+}>;
+
 interface RetirementResultProps {
-  result: RetirementResultData;
+  result: RetirementResultV2;
 }
 
 function ProbabilidadeGauge({ value }: { value: number }) {
@@ -48,9 +64,32 @@ function formatBRL(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 }
 
+function formatPct(v: number) {
+  return v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+}
+
 export function RetirementResult({ result }: RetirementResultProps) {
   const [showTable, setShowTable] = useState(false);
   const [showMemorial, setShowMemorial] = useState(false);
+
+  const ultimaLinha = result.projecaoAnualP50[result.projecaoAnualP50.length - 1];
+  const idadeFinal = result.idadeFinal ?? (ultimaLinha ? ultimaLinha.idade + 1 : undefined);
+  const idadeAposentadoria = result.projecaoAnualP50[0]?.idade;
+
+  const subPatrimonio = result.patrimonioAcumuladoAposentadoriaNominal !== undefined && result.ipcaMeta !== undefined
+    ? `Em R$ de hoje (retorno real médio) · ≈ ${formatBRL(result.patrimonioAcumuladoAposentadoriaNominal)} nominais com IPCA ${formatPct(result.ipcaMeta)}% a.a.`
+    : 'Estimativa com retorno real médio';
+
+  const inssDiferido = result.idadeInicioINSS != null
+    && idadeAposentadoria !== undefined
+    && result.idadeInicioINSS > idadeAposentadoria;
+  const subINSS = inssDiferido
+    ? `R$/mês na aposentadoria · ${formatBRL(result.beneficioINSSProjetadoMensal ?? 0)}/mês a partir dos ${result.idadeInicioINSS} anos (EC 103/2019)`
+    : 'R$/mês';
+
+  const subRendaTotal = result.rendaNecessariaPatrimonioMensal !== undefined
+    ? `INSS + aluguel + renda sustentável do patrimônio (90% das simulações). Necessária do patrimônio: ${formatBRL(result.rendaNecessariaPatrimonioMensal)}/mês`
+    : 'INSS + Aluguel + Patrimônio';
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -81,7 +120,7 @@ export function RetirementResult({ result }: RetirementResultProps) {
         <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground text-center">Probabilidade de Sucesso (Monte Carlo)</p>
         <ProbabilidadeGauge value={result.probabilidadeSucesso} />
         <p className="text-[10px] text-center text-muted-foreground">
-          O plano sustenta os gastos até os {result.projecaoAnualP50[result.projecaoAnualP50.length - 1]?.idade || '?'} anos em{' '}
+          O plano sustenta os gastos até os {idadeFinal ?? '?'} anos em{' '}
           <strong className="text-foreground">{result.probabilidadeSucesso.toFixed(0)}%</strong> das simulações
         </p>
       </div>
@@ -91,7 +130,7 @@ export function RetirementResult({ result }: RetirementResultProps) {
         <MetricCard
           label="Patrimônio na Aposentadoria"
           value={formatBRL(result.patrimonioAcumuladoAposentadoria)}
-          sub="Estimativa com retorno real médio"
+          sub={subPatrimonio}
         />
         <MetricCard
           label="Taxa de Retirada Inicial"
@@ -101,12 +140,12 @@ export function RetirementResult({ result }: RetirementResultProps) {
         <MetricCard
           label="Benefício INSS Estimado"
           value={formatBRL(result.beneficioINSSMensal)}
-          sub="R$/mês"
+          sub={subINSS}
         />
         <MetricCard
           label="Renda Total Mensal"
           value={formatBRL(result.rendaTotalMensal)}
-          sub="INSS + Aluguel + Patrimônio"
+          sub={subRendaTotal}
         />
       </div>
 
@@ -130,6 +169,9 @@ export function RetirementResult({ result }: RetirementResultProps) {
         <p className="text-[10px] text-muted-foreground/60 text-center">
           Como ler: em 5% dos cenários simulados o saldo termina abaixo do P5; o P50 é o meio do caminho (mediana); só
           5% terminam acima do P95. Planeje pelo P5–P50, não pelo otimista.
+          {result.semente !== undefined && (
+            <> Modelo {result.versaoModelo} · {result.numeroSimulacoes?.toLocaleString('pt-BR')} simulações · semente {result.semente} (mesma entrada, mesmo resultado).</>
+          )}
         </p>
       </div>
 
@@ -140,7 +182,7 @@ export function RetirementResult({ result }: RetirementResultProps) {
         <MetricCard
           label="Esgotamento P50"
           value={result.anoEsgotamentoP50 ? `Aos ${result.anoEsgotamentoP50} anos` : 'Não esgota'}
-          sub="Cenário mediano"
+          sub="Idade em que metade de todas as simulações já esgotou"
         />
       </div>
 
@@ -152,7 +194,7 @@ export function RetirementResult({ result }: RetirementResultProps) {
         >
           <span className="flex items-center gap-2">
             <TrendingUp className="h-3.5 w-3.5" />
-            Projeção Anual (Cenário P50)
+            Projeção Anual (P50 — mediana das simulações, ano a ano)
           </span>
           {showTable ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>

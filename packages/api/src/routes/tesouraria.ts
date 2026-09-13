@@ -29,8 +29,11 @@ import {
   tbillYields,
   sofrSpreadEay,
   jurosConvencoes,
+  parseDataCivil,
 } from '@correcao/core';
 import { getPremissasSnapshot } from '../services/marketdata/snapshot';
+import { coordenarCarga } from '../services/BCBService';
+import { limitarOperacaoAdmin } from '../middleware/adminAuth';
 import logger from '../middleware/logger';
 
 export const tesourariaRouter = Router();
@@ -47,11 +50,21 @@ tesourariaRouter.get('/premissas', async (_req: Request, res: Response) => {
   }
 });
 
-tesourariaRouter.post('/premissas/refresh', async (req: Request, res: Response) => {
+// O botão "Atualizar" da Tesouraria é público, então a rota não exige token (E10):
+// em vez disso, reconstruções concorrentes são deduplicadas e há limite por fonte
+// para uma requisição externa não disparar cargas repetidas nas fontes.
+tesourariaRouter.post(
+  '/premissas/refresh',
+  limitarOperacaoAdmin({
+    operacao: req => `tesouraria:premissas:${req.query.fonte === 'tesouro' ? 'tesouro' : 'auto'}`,
+    limite: 6,
+    janelaMs: 10 * 60 * 1000,
+  }),
+  async (req: Request, res: Response) => {
   try {
     // ?fonte=tesouro pula a ANBIMA (override técnico p/ diagnóstico/comparação).
     const fonte = req.query.fonte === 'tesouro' ? 'tesouro' : 'auto';
-    const snap = await getPremissasSnapshot(true, fonte);
+    const snap = await coordenarCarga(`tesouraria:premissas:${fonte}`, 'completa', () => getPremissasSnapshot(true, fonte));
     return res.json(snap);
   } catch (error: any) {
     logger.error('[TESOURARIA] Erro ao atualizar premissas:', error.message);
@@ -73,16 +86,47 @@ const numeroFlexivel = z
     return n;
   });
 
+/**
+ * Data de entrada → DATA CIVIL (Date à meia-noite local), igual em qualquer fuso
+ * de servidor (auditoria 2026-09-12, N02). `new Date('2026-03-01')` é meia-noite
+ * UTC: num servidor em São Paulo virava 28/02 e o 30/360 contava 32 dias.
+ *  - 'AAAA-MM-DD' / 'DD/MM/AAAA'  → a própria data;
+ *  - datetime sem fuso            → a data escrita;
+ *  - datetime com Z/deslocamento  → data civil do instante em America/Sao_Paulo.
+ * Outros formatos (ex.: 'MM/DD/AAAA' lido em silêncio pelo Date) → 400.
+ */
 const dataFlexivel = z
   .union([z.string(), z.date()])
   .transform((v, ctx) => {
-    const d = v instanceof Date ? v : new Date(v);
-    if (isNaN(d.getTime())) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'data inválida' });
+    const d = v instanceof Date ? v : parseDataCivil(v);
+    if (!d || isNaN(d.getTime())) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'data inválida (use AAAA-MM-DD ou DD/MM/AAAA)',
+      });
       return z.NEVER;
     }
     return d;
   });
+
+/**
+ * Limites de domínio para calculadores com laço síncrono por período (duration,
+ * amortização). Sem teto, n = 1.000.000 bloqueava o event loop por dezenas de
+ * segundos (auditoria 2026-09-12, F2-04). 1.200 períodos = 100 anos mensais.
+ * Espelha a validação de core/treasury/calculators/duration.ts — a API consome
+ * o `dist` do core, então a rota valida por conta própria antes de chamar o core.
+ */
+const MAX_PERIODOS = 1200;
+const MAX_PAGAMENTOS_ANO = 365;
+/** Prazo do cross-currency: até 100 anos. */
+const MAX_DU_PRAZO = 25200;
+const MAX_DC_PRAZO = 36500;
+
+/** Inteiro em [min, max], aceitando o mesmo formato flexível de numeroFlexivel. */
+const inteiroNaFaixa = (min: number, max: number, descricao: string) => {
+  const msg = `deve ser um inteiro entre ${min} e ${max} (${descricao})`;
+  return numeroFlexivel.pipe(z.number().int(msg).min(min, msg).max(max, msg));
+};
 
 const fluxoSchema = z.object({
   date: dataFlexivel,
@@ -97,13 +141,21 @@ const BODY_SCHEMAS: Record<string, z.ZodTypeAny> = {
     dc: numeroFlexivel.optional(),
     m: numeroFlexivel.optional(),
   }),
-  'cross-ccy': z.object({
-    modo: z.enum(['cdiParaMoeda', 'moedaParaCdi']).optional(),
-    spreadEstrangeiroAa: numeroFlexivel.optional(),
-    cdiAa: numeroFlexivel,
-    cupomEstrangeiroAa: numeroFlexivel,
-    spreadLocalAa: numeroFlexivel.optional(),
-  }),
+  'cross-ccy': z
+    .object({
+      modo: z.enum(['cdiParaMoeda', 'moedaParaCdi']).optional(),
+      spreadEstrangeiroAa: numeroFlexivel.optional(),
+      cdiAa: numeroFlexivel,
+      cupomEstrangeiroAa: numeroFlexivel,
+      spreadLocalAa: numeroFlexivel.optional(),
+      // Prazo da paridade (N18): CDI em base 252 (du); cupom e spread lineares 360 (dc).
+      du: inteiroNaFaixa(1, MAX_DU_PRAZO, 'dias úteis do prazo').optional(),
+      dc: inteiroNaFaixa(1, MAX_DC_PRAZO, 'dias corridos do prazo').optional(),
+    })
+    .refine(b => (b.du == null) === (b.dc == null), {
+      message: 'informe du e dc do prazo juntos (ou nenhum dos dois)',
+      path: ['du'],
+    }),
   'pre-cdi': z.object({
     modo: z.enum(['cdiParaPre', 'preParaCdi']).optional(),
     preAa: numeroFlexivel.optional(),
@@ -130,14 +182,21 @@ const BODY_SCHEMAS: Record<string, z.ZodTypeAny> = {
   amortizacao: z.object({
     principal: numeroFlexivel,
     i: numeroFlexivel,
-    n: numeroFlexivel,
+    // Mesmo teto de períodos: n alto gera 2 tabelas de n linhas (n = 1e6 ≈ 3 s de
+    // CPU no core + resposta JSON de centenas de MB). Só o teto — n ≤ 0 continua
+    // sendo rejeitado pelo core e n fracionário não é tratado aqui.
+    n: numeroFlexivel.pipe(
+      z.number().max(MAX_PERIODOS, `deve ser no máximo ${MAX_PERIODOS} (limite de parcelas)`)
+    ),
   }),
   duration: z.object({
     face: numeroFlexivel,
     couponRateAnnual: numeroFlexivel,
     ytm: numeroFlexivel,
-    m: numeroFlexivel,
-    n: numeroFlexivel,
+    m: inteiroNaFaixa(1, MAX_PAGAMENTOS_ANO, 'pagamentos por ano'),
+    n: inteiroNaFaixa(1, MAX_PERIODOS, 'limite de períodos'),
+    // N05: 'simples' (face·taxa/m, padrão) ou 'ntnf' ((1+taxa)^(1/m) − 1, igual ao PU NTN-F).
+    convencaoCupom: z.enum(['simples', 'ntnf']).optional(),
   }),
   'pu-titulos': z.object({
     tipo: z.enum(['LTN', 'NTNF']).optional(),
@@ -198,9 +257,9 @@ function validateBody(nome: string, body: unknown): { data?: any; error?: string
   return { data: parsed.data };
 }
 
-/** Converte fluxos com data string → Date. */
-function parseFluxos(fluxos: any[]): { date: Date; amount: number }[] {
-  return fluxos.map(f => ({ date: f.date instanceof Date ? f.date : new Date(f.date), amount: Number(f.amount) }));
+/** Fluxos já validados pelo schema (data civil via dataFlexivel; valor numérico). */
+function parseFluxos(fluxos: { date: Date; amount: number }[]): { date: Date; amount: number }[] {
+  return fluxos.map(f => ({ date: f.date, amount: f.amount }));
 }
 
 /** Dispatcher: nome canônico → função do core, com adaptação de inputs. */
@@ -221,7 +280,8 @@ const CALCULADORES: Record<string, (body: any) => unknown> = {
       case 'sofr':
         return sofrSpreadEay(b);
       case 'juros':
-        return jurosConvencoes({ ...b, d0: new Date(b.d0), d1: new Date(b.d1) });
+        // d0/d1 já chegam como data civil local (dataFlexivel) — sem novo parse UTC.
+        return jurosConvencoes({ ...b, d0: b.d0, d1: b.d1 });
       case 'tbill':
       default:
         return tbillYields(b);

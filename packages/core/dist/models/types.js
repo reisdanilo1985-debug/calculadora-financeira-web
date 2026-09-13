@@ -4,7 +4,7 @@
  * Todas as funções do motor de cálculo operam sobre estes tipos.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Currency = exports.InterestType = exports.AmortizationSystem = exports.GracePeriodType = exports.ThesisType = exports.PeriodicityType = exports.AmortizationType = exports.DayCountBasis = exports.IndexType = void 0;
+exports.Currency = exports.InterestType = exports.AmortizationSystem = exports.GracePeriodType = exports.ThesisType = exports.FlowDirection = exports.PeriodicityType = exports.AmortizationType = exports.DayCountBasis = exports.IndexType = void 0;
 /** Indexadores suportados pela calculadora */
 var IndexType;
 (function (IndexType) {
@@ -45,6 +45,14 @@ var PeriodicityType;
     PeriodicityType["SEMIANNUAL"] = "SEMIANNUAL";
     PeriodicityType["ANNUAL"] = "ANNUAL";
 })(PeriodicityType || (exports.PeriodicityType = PeriodicityType = {}));
+/** Sentido do fluxo de um evento do cronograma */
+var FlowDirection;
+(function (FlowDirection) {
+    /** Amortização/pagamento: reduz o saldo (padrão) */
+    FlowDirection["OUT"] = "OUT";
+    /** Aporte/captação: aumenta o saldo */
+    FlowDirection["IN"] = "IN";
+})(FlowDirection || (exports.FlowDirection = FlowDirection = {}));
 /** Tipo de tese de cálculo (Fase 1) */
 var ThesisType;
 (function (ThesisType) {

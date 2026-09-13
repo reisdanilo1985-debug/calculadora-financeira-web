@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useInView } from '@/hooks/useInView';
+import { CALCULADORES } from '@/components/tesouraria/calcConfig';
 
 const STATS = [
   { value: 8, suffix: '', label: 'indexadores oficiais' },
-  { value: 13, suffix: '', label: 'calculadoras de tesouraria' },
+  { value: CALCULADORES.length, suffix: '', label: 'calculadoras de tesouraria' },
   { value: 6, suffix: '', label: 'moedas com PTAX BCB' },
   { value: 1000, suffix: '+', label: 'cenários Monte Carlo' },
   { value: 28, suffix: '', label: 'dígitos de precisão Decimal' },
