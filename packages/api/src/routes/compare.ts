@@ -41,41 +41,72 @@ interface CompareRequest {
   scenarios: ScenarioInput[];
 }
 
-/** Amostra pontos mensais de um array de memoryRows para o gráfico */
-function sampleMonthly(rows: { date: Date | string; balance: number; accumulatedFactor: number; isProjected: boolean }[]) {
-  if (!rows.length) return [];
+/**
+ * Índices mensais datam cada linha no FIM do período apurado (fator até aquela data);
+ * CDI, Selic, SOFR e Pré datam no dia em que a taxa incide (fator até o fim do dia).
+ */
+const LINHA_NO_FIM_DO_PERIODO = new Set<string>([IndexType.IPCA, IndexType.IGPM, IndexType.INCC]);
 
-  const seen = new Set<string>();
-  const sampled: { date: string; variationPct: number; isProjected: boolean }[] = [];
+export interface PontoGrafico {
+  /** 'AAAA-MM-DD' */
+  date: string;
+  variationPct: number;
+  isProjected: boolean;
+}
 
-  for (const row of rows) {
-    const d = new Date(row.date);
-    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      sampled.push({
-        date: key + '-01',
-        variationPct: (row.accumulatedFactor - 1) * 100,
-        isProjected: row.isProjected,
-      });
+const dataIso = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const inicioDoDia = (d: Date | string) => {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+};
+
+/**
+ * Pontos do gráfico do Comparador: 0% na data inicial, a variação acumulada até o dia 1
+ * de cada mês e, por fim, a variação na data final pelo fator do resultado — a linha
+ * termina exatamente no número do ranking. Antes, a amostra pegava a PRIMEIRA linha de
+ * cada mês e descartava a última quando o mês já tinha aparecido (a linha parava antes
+ * do fim e perdia o que só entrava na última linha).
+ */
+export function pontosDoGrafico(
+  rows: { date: Date | string; accumulatedFactor: number; isProjected: boolean }[],
+  startDate: Date,
+  endDate: Date,
+  fatorFinal: number,
+  indexType: string
+): PontoGrafico[] {
+  const inicio = inicioDoDia(startDate);
+  const fim = inicioDoDia(endDate);
+  const linhas = rows
+    .map(r => ({ t: inicioDoDia(r.date).getTime(), fator: r.accumulatedFactor, projetada: r.isProjected }))
+    .sort((a, b) => a.t - b.t);
+  const linhaNoFim = LINHA_NO_FIM_DO_PERIODO.has(indexType);
+
+  const pontos: PontoGrafico[] = [{ date: dataIso(inicio), variationPct: 0, isProjected: false }];
+  let i = 0;
+  let vigente: (typeof linhas)[number] | undefined;
+  for (let g = new Date(inicio.getFullYear(), inicio.getMonth() + 1, 1); g < fim; g = new Date(g.getFullYear(), g.getMonth() + 1, 1)) {
+    const limite = g.getTime();
+    // Valor no início do dia g: linha datada no fim do período vale até g (inclusive);
+    // linha datada no dia da taxa só conta se for de um dia anterior a g.
+    while (i < linhas.length && (linhaNoFim ? linhas[i].t <= limite : linhas[i].t < limite)) {
+      vigente = linhas[i];
+      i++;
     }
-  }
-
-  // Garante o último ponto
-  const last = rows[rows.length - 1];
-  const lastKey = (() => {
-    const d = new Date(last.date);
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-  })();
-  if (!seen.has(lastKey)) {
-    sampled.push({
-      date: lastKey + '-01',
-      variationPct: (last.accumulatedFactor - 1) * 100,
-      isProjected: last.isProjected,
+    pontos.push({
+      date: dataIso(g),
+      variationPct: vigente ? (vigente.fator - 1) * 100 : 0,
+      isProjected: vigente?.projetada ?? false,
     });
   }
-
-  return sampled;
+  pontos.push({
+    date: dataIso(fim),
+    variationPct: (fatorFinal - 1) * 100,
+    isProjected: linhas[linhas.length - 1]?.projetada ?? false,
+  });
+  return pontos;
 }
 
 compareRouter.post('/cenarios', async (req: Request, res: Response) => {
@@ -164,7 +195,7 @@ compareRouter.post('/cenarios', async (req: Request, res: Response) => {
           variationPercent: result.variationPercent,
           accumulatedFactor: result.accumulatedFactor,
           hasProjections: result.hasProjections,
-          points: sampleMonthly(result.memoryRows),
+          points: pontosDoGrafico(result.memoryRows, startDate, endDate, result.accumulatedFactor, scenario.indexType),
           warning,
         };
       } catch (err: any) {

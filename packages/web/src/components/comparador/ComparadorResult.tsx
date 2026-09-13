@@ -4,7 +4,7 @@ import {
   ResponsiveContainer, Legend, ReferenceLine,
 } from 'recharts';
 import { CompareResult, CompareScenarioResult } from '@/lib/api';
-import { formatCurrency, formatDateShort } from '@/lib/utils';
+import { formatCurrency, formatDate, formatDateShort } from '@/lib/utils';
 import { SCENARIO_COLORS_EXPORT } from './ComparadorForm';
 import { TrendingUp, TrendingDown, Minus, AlertTriangle } from 'lucide-react';
 
@@ -17,7 +17,7 @@ function CustomTooltip({ active, payload, label }: any) {
   return (
     <div className="bg-card border border-border rounded-lg p-3 shadow-lg text-xs space-y-1 min-w-[160px]">
       <p className="text-muted-foreground font-medium mb-1.5">
-        {formatDateShort(new Date(label))}
+        {formatDate(new Date(label))}
       </p>
       {payload.map((entry: any) => (
         <div key={entry.dataKey} className="flex items-center justify-between gap-4">
@@ -39,38 +39,42 @@ function CustomTooltip({ active, payload, label }: any) {
 function ComparadorChart({ result }: { result: CompareResult }) {
   const successScenarios = result.scenarios.filter(s => !s.error && s.points?.length);
 
-  // Mescla todos os pontos em uma estrutura { date, [label]: variationPct }
+  // Mescla os pontos por data: { t (ms UTC da data civil), [sN]: variationPct }.
+  // A API envia 0% na data inicial, o acumulado no dia 1 de cada mês e o valor final
+  // do ranking na data final; o eixo é temporal para o espaçamento seguir as datas.
   const chartData = useMemo(() => {
-    type ChartRow = { date: string; [key: string]: number | string };
-    const dateMap = new Map<string, ChartRow>();
+    type ChartRow = { t: number; [key: string]: number };
+    const porData = new Map<string, ChartRow>();
+    const linha = (date: string) => {
+      if (!porData.has(date)) porData.set(date, { t: Date.parse(`${date.slice(0, 10)}T00:00:00Z`) });
+      return porData.get(date)!;
+    };
 
     successScenarios.forEach((scenario, idx) => {
-      const key0 = result.startDate.slice(0, 7) + '-01';
-      if (!dateMap.has(key0)) dateMap.set(key0, { date: key0 });
-      dateMap.get(key0)![`s${idx}`] = 0;
-
+      const inicio = result.startDate.slice(0, 10);
+      const primeiro = scenario.points?.[0]?.date;
+      if (!primeiro || primeiro > inicio) linha(inicio)[`s${idx}`] = 0;
       scenario.points?.forEach(pt => {
-        if (!dateMap.has(pt.date)) dateMap.set(pt.date, { date: pt.date });
-        dateMap.get(pt.date)![`s${idx}`] = pt.variationPct;
+        linha(pt.date)[`s${idx}`] = pt.variationPct;
       });
+      // A linha termina no número do ranking, na data final (vale também para respostas antigas da API)
+      if (scenario.variationPercent !== undefined) linha(result.endDate.slice(0, 10))[`s${idx}`] = scenario.variationPercent;
     });
 
-    return Array.from(dateMap.values()).sort((a, b) =>
-      (a.date as string).localeCompare(b.date as string)
-    );
+    return Array.from(porData.values()).sort((a, b) => a.t - b.t);
   }, [result]);
+
+  // Ticks no dia 1 de cada mês (até ~12 em períodos longos)
+  const ticks = useMemo(() => {
+    const inicioDeMes = chartData.map(d => d.t).filter(t => new Date(t).getUTCDate() === 1);
+    if (inicioDeMes.length <= 13) return inicioDeMes;
+    const step = Math.ceil(inicioDeMes.length / 12);
+    return inicioDeMes.filter((_, i) => i % step === 0);
+  }, [chartData]);
 
   if (!chartData.length) return null;
 
   const formatYAxis = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
-
-  // Ticks mensais inteligentes
-  const ticks = useMemo(() => {
-    if (chartData.length <= 24) return chartData.map(d => d.date);
-    // Para períodos longos, mostrar apenas ~12 ticks anuais
-    const step = Math.ceil(chartData.length / 12);
-    return chartData.filter((_, i) => i % step === 0).map(d => d.date);
-  }, [chartData]);
 
   return (
     <div className="w-full h-72">
@@ -78,7 +82,10 @@ function ComparadorChart({ result }: { result: CompareResult }) {
         <LineChart data={chartData} margin={{ top: 10, right: 16, bottom: 0, left: 12 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.15} />
           <XAxis
-            dataKey="date"
+            dataKey="t"
+            type="number"
+            scale="time"
+            domain={['dataMin', 'dataMax']}
             ticks={ticks}
             tickFormatter={v => formatDateShort(new Date(v))}
             tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
