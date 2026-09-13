@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
-import type { OptionLeg, OptionsSimulationInput, OptionsSimulationResult } from '@correcao/core';
-import { OPTION_STRATEGIES } from '../../../../core/src/options/strategies';
 import { simulateOptions, getOptionsUnderlying } from '@/lib/api';
+import type { OptionLeg, OptionsSimulationInput, OptionsSimulationResult } from '@/lib/api';
+import { OPTION_STRATEGIES } from './strategyCatalog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {

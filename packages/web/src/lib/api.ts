@@ -3,7 +3,6 @@
  */
 
 import axios from 'axios';
-import type { OptionsSimulationInput, OptionsSimulationResult } from '@correcao/core';
 
 const rawUrl = import.meta.env.VITE_API_URL || '';
 const baseURL = rawUrl.endsWith('/api') ? rawUrl : (rawUrl ? `${rawUrl}/api` : '/api');
@@ -427,6 +426,11 @@ export async function getMarketPulse(): Promise<MarketAsset[]> {
 }
 
 // ── Opções B3 ───────────────────────────────────────────────────────────────
+export interface OptionLeg { id: string; symbol: string; instrument: 'OPTION' | 'UNDERLYING'; side: 'LONG' | 'SHORT'; optionType?: 'CALL' | 'PUT'; quantity: number; multiplier: number; strike?: number; expiry?: string; premium: number; impliedVolatility?: number; }
+export interface OptionsCostSide { fixedPerOrder: number; perContract: number; percentNotional: number; }
+export interface OptionsSimulationInput { strategyName?: string; market: { symbol: string; spot: number; valuationDate: string; riskFreeRate: number; dividendYield: number; currency: 'BRL' }; legs: OptionLeg[]; costs: { entry: OptionsCostSide; exit: OptionsCostSide; exercisePerContract: number; includeExitCosts: boolean }; grid: { spotMin: number; spotMax: number; spotSteps: number; dateSteps: number; volatilityShift: number }; }
+export interface OptionGreeks { delta: number; gamma: number; theta: number; vega: number; rho: number; }
+export interface OptionsSimulationResult { summary: { initialPositionValue: number; netPremium: number; entryCosts: number; currentValue: number; currentPnl: number; breakEvens: number[]; maxProfit: number | null; maxLoss: number | null; profitUnlimited: boolean; lossUnlimited: boolean; greeks: OptionGreeks }; legs: { id: string; symbol: string; theoreticalPrice: number; marketPrice: number; impliedVolatility: number | null; positionValue: number; pnl: number; expired: boolean; greeks: OptionGreeks }[]; spots: number[]; dates: string[]; payoffCurve: { spot: number; pnl: number; value: number }[]; valuationCurves: { date: string; points: { spot: number; pnl: number; value: number }[] }[]; heatmap: { date: string; values: number[] }[]; warnings: string[]; }
 export interface UnderlyingQuote {
   symbol: string;
   price: number;
