@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { proxyConfig } from './marketdata/proxyAgent';
 import logger from '../middleware/logger';
 
 const OLINDA_BASE_URL = 'https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata';
@@ -99,7 +100,7 @@ function numero(valor: unknown): number | undefined {
 /** GET na Olinda; qualquer falha vira PtaxSourceError (nunca "lista vazia"). */
 async function consultarOlinda(url: string, descricao: string): Promise<any[]> {
   try {
-    const { data } = await axios.get(url, { timeout: 15000 });
+    const { data } = await axios.get(url, { timeout: 15000, ...proxyConfig() });
     if (!data || !Array.isArray(data.value)) {
       throw new PtaxSourceError(`resposta inesperada da Olinda para ${descricao} (sem lista "value")`);
     }
@@ -131,7 +132,7 @@ export class PtaxService {
 
     try {
       const url = `${OLINDA_BASE_URL}/Moedas?$format=json`;
-      const { data } = await axios.get(url, { timeout: 15000 });
+      const { data } = await axios.get(url, { timeout: 15000, ...proxyConfig() });
       if (data && Array.isArray(data.value) && data.value.length > 0) {
         this.currenciesCache = data.value;
         this.lastCacheUpdate = now;

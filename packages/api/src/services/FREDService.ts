@@ -16,6 +16,7 @@ import {
   setIndexFetchedAt,
 } from './DatabaseService';
 import { coordenarCarga, cargaEmAndamento, isCacheExpired, REVISION_WINDOW_DAYS_DAILY } from './BCBService';
+import { proxyConfig } from './marketdata/proxyAgent';
 import logger from '../middleware/logger';
 
 const FRED_CSV_URL = 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=SOFR';
@@ -57,6 +58,7 @@ async function fetchSOFRFromFREDCSV(
       timeout: 20000,
       responseType: 'text',
       headers: { 'Accept': 'text/csv,text/plain,*/*' },
+      ...proxyConfig(),
     });
 
     const lines = response.data.split('\n').slice(1); // pula o header "observation_date,SOFR"

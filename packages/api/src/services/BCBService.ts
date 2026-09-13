@@ -38,6 +38,7 @@ import {
   getIndexFetchedAt,
   setIndexFetchedAt,
 } from './DatabaseService';
+import { proxyConfig } from './marketdata/proxyAgent';
 import logger from '../middleware/logger';
 
 const BCB_BASE_URL = 'https://api.bcb.gov.br/dados/serie/bcdata.sgs';
@@ -237,6 +238,7 @@ async function fetchFromBCB(
         params,
         timeout: 15000,
         headers: { 'Accept': 'application/json' },
+        ...proxyConfig(),
       });
 
       if (isSgsNoDataBody(response.data)) {

@@ -1,6 +1,11 @@
 const YahooFinance = require('yahoo-finance2').default;
-const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+import { fetchProxyConfig } from './marketdata/proxyAgent';
 import logger from '../middleware/logger';
+
+const yahooFinance = new YahooFinance({
+  suppressNotices: ['yahooSurvey'],
+  ...fetchProxyConfig(),
+});
 
 export interface MarketAsset {
   symbol: string;
