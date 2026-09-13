@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BarChart3, Settings, TrendingUp, ShieldCheck, Database, Globe, HelpCircle, X, BarChart2, GitCompare, Menu, Landmark, PiggyBank, Percent, Calculator } from 'lucide-react';
+import { BarChart3, Settings, TrendingUp, ShieldCheck, Database, Globe, HelpCircle, X, BarChart2, GitCompare, Menu, Landmark, PiggyBank, Percent, Calculator, CandlestickChart } from 'lucide-react';
 import { CalculatorForm } from '@/components/calculator/CalculatorForm';
 import { ResultsSummary } from '@/components/results/ResultsSummary';
 import { EvolutionChart } from '@/components/results/EvolutionChart';
@@ -14,6 +14,7 @@ import { PtaxPanel } from '@/components/ptax/PtaxPanel';
 import { WaccPanel } from '@/components/wacc/WaccPanel';
 import { RetirementPanel } from '@/components/retirement/RetirementPanel';
 import { TesourariaPanel } from '@/components/tesouraria/TesourariaPanel';
+import { OptionsPanel } from '@/components/options/OptionsPanel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CalculationResult, CompareResult } from '@/lib/api';
@@ -26,6 +27,7 @@ const NAV_ITEMS: { key: string; label: string; short: string; icon: React.Compon
   { key: 'cambio', label: 'Câmbio', short: 'Câmbio', icon: Globe },
   { key: 'ptax', label: 'PTAX BCB', short: 'PTAX', icon: TrendingUp },
   { key: 'tesouraria', label: 'Tesouraria', short: 'Tesour.', icon: Landmark },
+  { key: 'opcoes', label: 'Opções', short: 'Opções', icon: CandlestickChart },
   { key: 'wacc', label: 'WACC', short: 'WACC', icon: Percent },
   { key: 'aposentadoria', label: 'Aposentadoria', short: 'Aposent.', icon: PiggyBank },
   { key: 'indices', label: 'Índices / Admin', short: 'Índices', icon: Database },
@@ -367,6 +369,11 @@ export function HomePage({ initialTab }: HomePageProps) {
             {/* Tab: Tesouraria */}
             <TabsContent value="tesouraria" className="flex-1 m-0 data-[state=active]:flex flex-col">
               <TesourariaPanel />
+            </TabsContent>
+
+            {/* Tab: Opções */}
+            <TabsContent value="opcoes" className="flex-1 m-0 data-[state=active]:flex flex-col">
+              <OptionsPanel />
             </TabsContent>
 
             {/* Tab: WACC */}

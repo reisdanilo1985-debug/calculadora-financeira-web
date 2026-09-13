@@ -10,6 +10,7 @@ import { marketRouter } from './routes/market';
 import { waccRouter } from './routes/wacc';
 import { retirementRouter } from './routes/retirement';
 import { tesourariaRouter } from './routes/tesouraria';
+import { optionsRouter } from './routes/options';
 import logger from './middleware/logger';
 
 /** Erro de origem recusada pelo CORS (vira 403 no error handler). */
@@ -72,6 +73,7 @@ export function createApp() {
   app.use('/api/wacc', waccRouter);
   app.use('/api/retirement', retirementRouter);
   app.use('/api/tesouraria', tesourariaRouter);
+  app.use('/api/options', optionsRouter);
 
   // Health check
   app.get('/health', (_req, res) => {

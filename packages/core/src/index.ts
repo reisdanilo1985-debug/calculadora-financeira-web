@@ -16,3 +16,4 @@ export * from './engines/WaccEngine';
 export * from './engines/RetirementEngine';
 export * from './utils/businessDays';
 export * from './treasury';
+export * from './options';

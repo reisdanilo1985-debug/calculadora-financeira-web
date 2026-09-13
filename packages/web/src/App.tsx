@@ -9,6 +9,7 @@ const VALID_TABS = new Set([
   'cambio',
   'ptax',
   'tesouraria',
+  'opcoes',
   'wacc',
   'aposentadoria',
   'indices',

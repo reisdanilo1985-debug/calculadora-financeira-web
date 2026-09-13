@@ -3,6 +3,7 @@
  */
 
 import axios from 'axios';
+import type { OptionsSimulationInput, OptionsSimulationResult } from '@correcao/core';
 
 const rawUrl = import.meta.env.VITE_API_URL || '';
 const baseURL = rawUrl.endsWith('/api') ? rawUrl : (rawUrl ? `${rawUrl}/api` : '/api');
@@ -422,6 +423,26 @@ export interface MarketAsset {
 /** Busca cotações on-line de mercado */
 export async function getMarketPulse(): Promise<MarketAsset[]> {
   const { data } = await api.get<MarketAsset[]>('/market/pulse');
+  return data;
+}
+
+// ── Opções B3 ───────────────────────────────────────────────────────────────
+export interface UnderlyingQuote {
+  symbol: string;
+  price: number;
+  currency: string;
+  timestamp: string;
+  source: string;
+  delayed: boolean;
+}
+
+export async function simulateOptions(request: OptionsSimulationInput): Promise<OptionsSimulationResult> {
+  const { data } = await api.post<OptionsSimulationResult>('/options/simulate', request);
+  return data;
+}
+
+export async function getOptionsUnderlying(symbol: string): Promise<UnderlyingQuote> {
+  const { data } = await api.get<UnderlyingQuote>(`/options/underlying/${encodeURIComponent(symbol)}`);
   return data;
 }
 
