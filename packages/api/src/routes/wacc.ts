@@ -13,9 +13,29 @@ import {
   getParametrosMercado,
   getTabelaParametrosMercado,
 } from '../services/DamodaranService';
+import { z } from 'zod';
 import logger from '../middleware/logger';
+import { numero, numeroOpcional, validarCorpo } from '../middleware/validate';
 
 export const waccRouter = Router();
+
+/** Corpo de POST /calcular: números finitos (ou strings numéricas); extras passam. */
+const waccBodySchema = z
+  .object({
+    setor: z.string().max(120).nullish(),
+    pais: z.string().max(120).nullish(),
+    moeda: z.enum(['BRL', 'USD', 'EUR']).nullish(),
+    taxaLivreDeRisco: numero,
+    premioRiscoMercado: numero,
+    betaDesalavancado: numero,
+    premioRiscoPais: numero,
+    premioTamanho: numeroOpcional,
+    marketCap: numero.pipe(z.number().min(0, 'não pode ser negativo')),
+    dividaBruta: numero.pipe(z.number().min(0, 'não pode ser negativo')),
+    aliquotaIR: numero,
+    custoDividaPreTax: numero,
+  })
+  .passthrough();
 
 /**
  * GET /api/wacc/setores
@@ -80,20 +100,8 @@ waccRouter.get('/pais/:codigo', (req: Request, res: Response) => {
  * POST /api/wacc/calcular
  * Calcula o WACC dado os inputs (inclui a sensibilidade por premissa, em p.p.)
  */
-waccRouter.post('/calcular', (req: Request, res: Response) => {
+waccRouter.post('/calcular', validarCorpo(waccBodySchema), (req: Request, res: Response) => {
   const body = req.body as WaccInput;
-
-  // Validação básica
-  const requiredFields: (keyof WaccInput)[] = [
-    'taxaLivreDeRisco', 'premioRiscoMercado', 'betaDesalavancado',
-    'premioRiscoPais', 'marketCap', 'dividaBruta', 'aliquotaIR', 'custoDividaPreTax',
-  ];
-
-  for (const field of requiredFields) {
-    if (body[field] === undefined || body[field] === null) {
-      return res.status(400).json({ error: `Campo obrigatório ausente: ${String(field)}` });
-    }
-  }
 
   if ((body.marketCap + body.dividaBruta) <= 0) {
     return res.status(400).json({ error: 'Market Cap e Dívida Bruta não podem ser ambos zero.' });

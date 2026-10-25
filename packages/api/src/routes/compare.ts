@@ -15,10 +15,45 @@ import {
   calculate,
   getPremisesRequiredFrom,
 } from '@correcao/core';
+import { z } from 'zod';
 import { dataCivil, fetchIndexData, missingDataResponse, normalizeSpread } from './calculate';
+import { numero, numeroOpcional, validarCorpo } from '../middleware/validate';
 import logger from '../middleware/logger';
 
 export const compareRouter = Router();
+
+// Tipos e enums do corpo (zod). Obrigatoriedade de datas, contagem de cenários
+// e ordem das datas continuam nas checagens da rota (mensagens já conhecidas).
+const cenarioSchema = z
+  .object({
+    label: z.string().max(120).nullish(),
+    indexType: z.nativeEnum(IndexType),
+    dayCountBasis: z.nativeEnum(DayCountBasis).nullish(),
+    prefixedRate: numeroOpcional,
+    spread: z
+      .object({
+        mode: z.enum(['percentage', 'additive']),
+        value: numero,
+        additiveBase: z.nativeEnum(DayCountBasis).nullish(),
+      })
+      .passthrough()
+      .nullish(),
+    futurePremises: z
+      .array(z.object({ startDate: z.string(), endDate: z.string(), rate: numero }).passthrough())
+      .max(1200)
+      .nullish(),
+  })
+  .passthrough();
+
+const compareBodySchema = z
+  .object({
+    initialAmount: numeroOpcional,
+    startDate: z.string().nullish(),
+    endDate: z.string().nullish(),
+    currency: z.nativeEnum(Currency).nullish(),
+    scenarios: z.array(cenarioSchema).nullish(),
+  })
+  .passthrough();
 
 interface ScenarioInput {
   label: string;
@@ -109,7 +144,7 @@ export function pontosDoGrafico(
   return pontos;
 }
 
-compareRouter.post('/cenarios', async (req: Request, res: Response) => {
+compareRouter.post('/cenarios', validarCorpo(compareBodySchema), async (req: Request, res: Response) => {
   const body = req.body as CompareRequest;
 
   if (!body.initialAmount || body.initialAmount <= 0) {

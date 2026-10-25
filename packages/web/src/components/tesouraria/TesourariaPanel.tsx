@@ -16,6 +16,7 @@ import {
   refreshPremissasTesouraria,
   runTesourariaCalc,
 } from '@/lib/api';
+import { executarComoAdmin, mensagemErroAdmin } from '@/lib/adminToken';
 import { CALCULADORES, GRUPOS, getCalcByNome } from './calcConfig';
 import { TesourariaForm } from './TesourariaForm';
 import { DecisionView } from './DecisionView';
@@ -61,12 +62,15 @@ export function TesourariaPanel() {
     };
   }, []);
 
+  // Reconstruir as premissas é operação administrativa (token pedido na hora, só em memória).
   const handleRefresh = async () => {
     setSnapLoading(true);
+    setError(null);
     try {
-      setSnapshot(await refreshPremissasTesouraria());
-    } catch {
-      /* mantém snapshot atual */
+      setSnapshot(await executarComoAdmin(token => refreshPremissasTesouraria(token), 'atualizar as premissas de mercado'));
+    } catch (err: any) {
+      /* mantém o snapshot atual e explica (503 sem token no servidor, cancelado, 429...) */
+      setError(mensagemErroAdmin(err, 'Falha ao atualizar premissas de mercado.'));
     } finally {
       setSnapLoading(false);
     }

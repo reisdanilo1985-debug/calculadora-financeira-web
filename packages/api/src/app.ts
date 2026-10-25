@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { calculateRouter } from './routes/calculate';
 import { indicesRouter } from './routes/indices';
@@ -26,6 +27,19 @@ const SUBDOMINIO_PLATAFORMA = /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.(vercel\.ap
 
 export function createApp() {
   const app = express();
+
+  // Atrás do proxy do Render (e de qualquer PaaS): req.ip passa a ser o IP do
+  // cliente (X-Forwarded-For), senão o limite de requisições vale para o proxy
+  // inteiro — todos os usuários dividiriam a mesma cota.
+  if (process.env.NODE_ENV === 'production' || process.env.TRUST_PROXY === '1') {
+    app.set('trust proxy', 1);
+  }
+
+  // Cabeçalhos de segurança (API só devolve JSON: CSP restritiva, sem sniffing,
+  // sem framing, HSTS quando servido em HTTPS).
+  app.use(helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' }, // o front está em outra origem (Vercel)
+  }));
 
   // CORS — origens exatas em CORS_ORIGIN (separadas por vírgula; barra final ignorada).
   const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')

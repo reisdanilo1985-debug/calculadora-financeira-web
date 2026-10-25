@@ -5,9 +5,54 @@ import {
   PERFIS_RISCO,
   RetirementInput,
 } from '@correcao/core';
+import { z } from 'zod';
 import logger from '../middleware/logger';
+import { booleanoOpcional, dataIsoOpcional, numero, numeroOpcional, validarCorpo } from '../middleware/validate';
 
 export const retirementRouter = Router();
+
+const GENEROS = ['M', 'F'] as const;
+const PERFIS = ['conservador', 'moderado', 'agressivo'] as const;
+const TABELAS_PGBL = ['regressiva', 'progressiva'] as const;
+
+/** Corpo de POST /calcular: tipos e enums; obrigatoriedade/ordem das idades continua na rota. */
+const retirementBodySchema = z
+  .object({
+    idadeAtual: numeroOpcional,
+    idadeAposentadoria: numeroOpcional,
+    expectativaVida: numeroOpcional,
+    genero: z.enum(GENEROS).nullish(),
+    patrimonioTributavel: numeroOpcional,
+    saldoPGBL: numeroOpcional,
+    saldoVGBL: numeroOpcional,
+    rendaAluguel: numeroOpcional,
+    aporteMensal: numeroOpcional,
+    aportePGBL: numeroOpcional,
+    aporteVGBL: numeroOpcional,
+    incluirINSS: booleanoOpcional,
+    salarioContribuicao: numeroOpcional,
+    tempoContribuicaoAnos: numeroOpcional,
+    gastoMensalDesejado: numeroOpcional,
+    incluirInflacaoMedica: booleanoOpcional,
+    gastoMensalSaude: numeroOpcional,
+    perfilRisco: z.string().nullish(), // mensagem própria na rota
+    ipcaMeta: numeroOpcional,
+    tabelaPGBL: z.string().nullish(), // idem
+    numeroSimulacoes: numeroOpcional,
+    semente: z.union([z.number(), z.string()]).nullish(), // validada na rota (inteiro de 32 bits)
+    dataReferencia: dataIsoOpcional,
+  })
+  .passthrough();
+
+const inssBodySchema = z
+  .object({
+    genero: z.enum(GENEROS),
+    idadeAposentadoria: numero.pipe(z.number().min(0).max(130)),
+    tempoContribuicaoAnos: numero.pipe(z.number().min(0).max(100)),
+    salarioContribuicao: numero.pipe(z.number().positive('deve ser maior que zero')),
+    dataReferencia: dataIsoOpcional,
+  })
+  .passthrough();
 
 /**
  * GET /api/retirement/perfis
@@ -25,7 +70,7 @@ retirementRouter.get('/perfis', (_req: Request, res: Response) => {
  * POST /api/retirement/calcular
  * Executa simulação Monte Carlo de aposentadoria
  */
-retirementRouter.post('/calcular', (req: Request, res: Response) => {
+retirementRouter.post('/calcular', validarCorpo(retirementBodySchema), (req: Request, res: Response) => {
   try {
     const input: RetirementInput = req.body;
 
@@ -85,13 +130,9 @@ retirementRouter.post('/calcular', (req: Request, res: Response) => {
  * POST /api/retirement/inss
  * Estima apenas o benefício INSS, sem simulação Monte Carlo
  */
-retirementRouter.post('/inss', (req: Request, res: Response) => {
+retirementRouter.post('/inss', validarCorpo(inssBodySchema), (req: Request, res: Response) => {
   try {
     const { genero, idadeAposentadoria, tempoContribuicaoAnos, salarioContribuicao, dataReferencia } = req.body;
-
-    if (!genero || !idadeAposentadoria || tempoContribuicaoAnos === undefined || !salarioContribuicao) {
-      return res.status(400).json({ error: 'Campos obrigatórios: genero, idadeAposentadoria, tempoContribuicaoAnos, salarioContribuicao' });
-    }
 
     // Elegibilidade (EC 103/2019 art. 19) + valor (art. 26); teto/salário mínimo pela vigência de `dataReferencia` (padrão: hoje)
     const result = calcularBeneficioINSS(genero, idadeAposentadoria, tempoContribuicaoAnos, salarioContribuicao, dataReferencia);

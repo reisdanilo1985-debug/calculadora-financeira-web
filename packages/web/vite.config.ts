@@ -2,9 +2,22 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
+import fs from 'fs'
 
 /** Ícones gerados por `npm run pwa:icons` (pwa-assets.config.ts) a partir de public/icon.svg. */
 const ICON_192 = [{ src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' }]
+
+/**
+ * Cabeçalhos de segurança que a Vercel aplica a todas as rotas (vercel.json).
+ * Repetidos no `vite preview` para a CSP ser testada localmente antes do deploy.
+ */
+function cabecalhosSegurancaVercel(): Record<string, string> {
+  const vercel = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'vercel.json'), 'utf8')) as {
+    headers?: { source: string; headers: { key: string; value: string }[] }[]
+  }
+  const geral = vercel.headers?.find(h => h.source === '/(.*)')
+  return Object.fromEntries((geral?.headers ?? []).map(h => [h.key, h.value]))
+}
 
 export default defineConfig({
   plugins: [
@@ -114,6 +127,7 @@ export default defineConfig({
   preview: {
     // `vite preview` (build de produção com service worker) — mesma API do dev
     port: 4173,
+    headers: cabecalhosSegurancaVercel(),
     proxy: {
       '/api': {
         target: 'http://localhost:3001',

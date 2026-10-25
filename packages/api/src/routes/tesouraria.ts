@@ -33,7 +33,7 @@ import {
 } from '@correcao/core';
 import { getPremissasSnapshot } from '../services/marketdata/snapshot';
 import { coordenarCarga } from '../services/BCBService';
-import { limitarOperacaoAdmin } from '../middleware/adminAuth';
+import { limitarOperacaoAdmin, requireAdmin } from '../middleware/adminAuth';
 import logger from '../middleware/logger';
 
 export const tesourariaRouter = Router();
@@ -50,11 +50,13 @@ tesourariaRouter.get('/premissas', async (_req: Request, res: Response) => {
   }
 });
 
-// O botão "Atualizar" da Tesouraria é público, então a rota não exige token (E10):
-// em vez disso, reconstruções concorrentes são deduplicadas e há limite por fonte
-// para uma requisição externa não disparar cargas repetidas nas fontes.
+// Reconstruir o snapshot dispara cargas no BCB, Tesouro e ANBIMA: operação
+// administrativa (header x-admin-token, como o refresh de índices). A leitura
+// (GET /premissas) continua pública; sem ADMIN_TOKEN no servidor → 503.
+// Reconstruções concorrentes são deduplicadas e há limite por fonte.
 tesourariaRouter.post(
   '/premissas/refresh',
+  requireAdmin,
   limitarOperacaoAdmin({
     operacao: req => `tesouraria:premissas:${req.query.fonte === 'tesouro' ? 'tesouro' : 'auto'}`,
     limite: 6,

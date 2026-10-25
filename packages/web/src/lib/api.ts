@@ -3,6 +3,7 @@
  */
 
 import axios from 'axios';
+import { cabecalhosAdmin } from './adminToken';
 
 const rawUrl = import.meta.env.VITE_API_URL || '';
 const baseURL = rawUrl.endsWith('/api') ? rawUrl : (rawUrl ? `${rawUrl}/api` : '/api');
@@ -237,9 +238,11 @@ export async function getCacheStatus(): Promise<CacheStatusItem[]> {
   return data;
 }
 
-/** Força atualização de um índice */
-export async function refreshIndex(indexType: string): Promise<{ inserted: number; message: string }> {
-  const { data } = await api.post(`/indices/${indexType}/refresh`);
+/** Força atualização de um índice (operação administrativa: header x-admin-token). */
+export async function refreshIndex(indexType: string, adminToken: string | null = null): Promise<{ inserted: number; message: string }> {
+  const { data } = await api.post(`/indices/${encodeURIComponent(indexType)}/refresh`, undefined, {
+    headers: cabecalhosAdmin(adminToken),
+  });
   return data;
 }
 
@@ -661,9 +664,11 @@ export async function getPremissasTesouraria(): Promise<PremissasSnapshot> {
   return data;
 }
 
-/** Força a reconstrução do snapshot de premissas. */
-export async function refreshPremissasTesouraria(): Promise<PremissasSnapshot> {
-  const { data } = await api.post<PremissasSnapshot>('/tesouraria/premissas/refresh', {});
+/** Força a reconstrução do snapshot de premissas (operação administrativa: header x-admin-token). */
+export async function refreshPremissasTesouraria(adminToken: string | null = null): Promise<PremissasSnapshot> {
+  const { data } = await api.post<PremissasSnapshot>('/tesouraria/premissas/refresh', {}, {
+    headers: cabecalhosAdmin(adminToken),
+  });
   return data;
 }
 
