@@ -139,9 +139,14 @@ fator = produto de (1 + sofr/100 * n/360) por publicação; n = dias corridos at
 PORT=3001
 FRED_API_KEY=
 DATABASE_PATH=./data/cache.db
+ADMIN_TOKEN=            # obrigatório para refresh de índices e das premissas da Tesouraria (sem ele → 503); ≥16 chars aleatórios
+CORS_ORIGIN=https://<dominio-do-front>.vercel.app   # origens exatas, separadas por vírgula
+CORS_STRICT=1           # só as origens de CORS_ORIGIN (sem ele, qualquer *.vercel.app / *.onrender.com passa)
+# NODE_ENV=production liga trust proxy (rate limit por IP real atrás do Render); fora do Render usar TRUST_PROXY=1
 
 # packages/web — configurar no Vercel
 VITE_API_URL=https://<render-service>.onrender.com
+# Cabeçalhos de segurança (CSP etc.) ficam em packages/web/vercel.json — connect-src permite só https://*.onrender.com
 ```
 
 ## Convenções de Código
