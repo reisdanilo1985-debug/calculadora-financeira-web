@@ -17,6 +17,7 @@ import {
   runTesourariaCalc,
 } from '@/lib/api';
 import { executarComoAdmin, mensagemErroAdmin } from '@/lib/adminToken';
+import { datasNoTextoBR, formatDate } from '@/lib/utils';
 import { CALCULADORES, GRUPOS, getCalcByNome } from './calcConfig';
 import { TesourariaForm } from './TesourariaForm';
 import { DecisionView } from './DecisionView';
@@ -141,7 +142,7 @@ export function TesourariaPanel() {
                 <Landmark className="h-4 w-4 text-primary" />
                 Premissas de mercado
                 {snapshot && (
-                  <span className="text-xs font-normal text-muted-foreground/80">· {snapshot.dataRef}</span>
+                  <span className="text-xs font-normal text-muted-foreground/80">· {formatDate(snapshot.dataRef)}</span>
                 )}
               </CardTitle>
               <div className="flex items-center gap-2">
@@ -175,18 +176,18 @@ export function TesourariaPanel() {
                   ['IPCA 12m', snapshot.escalares.ipcaFocus12m, 'ipcaFocus12m'],
                   ['SOFR', snapshot.escalares.sofrAa, 'sofrAa'],
                 ].map(([label, val, key]) => (
-                  <div key={key as string} className="rounded border border-white/5 bg-white/5 px-3 py-2" title={snapshot.proveniencia[key as string]?.fonte}>
+                  <div key={key as string} className="rounded border border-white/5 bg-white/5 px-3 py-2" title={datasNoTextoBR(snapshot.proveniencia[key as string]?.fonte ?? '')}>
                     <div className="text-[11px] text-muted-foreground">{label as string}</div>
                     <div className="text-sm font-semibold tabular-nums text-foreground mt-0.5">{pct(val as number)}</div>
                   </div>
                 ))}
-                <div className="rounded border border-white/5 bg-white/5 px-3 py-2" title={snapshot.proveniencia.usdbrl?.fonte}>
+                <div className="rounded border border-white/5 bg-white/5 px-3 py-2" title={datasNoTextoBR(snapshot.proveniencia.usdbrl?.fonte ?? '')}>
                   <div className="text-[11px] text-muted-foreground">USD/BRL</div>
                   <div className="text-sm font-semibold tabular-nums text-foreground mt-0.5">
                     {snapshot.escalares.usdbrl.toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
                   </div>
                 </div>
-                <div className="rounded border border-white/5 bg-white/5 px-3 py-2" title={snapshot.proveniencia.eurusd?.fonte}>
+                <div className="rounded border border-white/5 bg-white/5 px-3 py-2" title={datasNoTextoBR(snapshot.proveniencia.eurusd?.fonte ?? '')}>
                   <div className="text-[11px] text-muted-foreground">EUR/USD</div>
                   <div className="text-sm font-semibold tabular-nums text-foreground mt-0.5">
                     {snapshot.escalares.eurusd.toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
@@ -205,9 +206,9 @@ export function TesourariaPanel() {
                   const prov = snapshot.proveniencia[key];
                   const live = prov && !prov.flagDesatualizado;
                   return (
-                    <span key={key} className={`flex items-center gap-1 ${live ? 'text-primary' : 'text-amber-400'}`} title={prov?.fonte}>
+                    <span key={key} className={`flex items-center gap-1 ${live ? 'text-primary' : 'text-amber-400'}`} title={datasNoTextoBR(prov?.fonte ?? '')}>
                       {live ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
-                      {label} {n ? `(${n} vért.)` : ''} · {prov?.fonte ?? 'seed'}
+                      {label} {n ? `(${n} vért.)` : ''} · {datasNoTextoBR(prov?.fonte ?? 'seed')}
                     </span>
                   );
                 })}

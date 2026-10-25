@@ -55,7 +55,7 @@ function applyMask(raw: string): string {
  * Campo de data no formato brasileiro dd/mm/aaaa
  * com máscara automática e suporte a calendário nativo.
  */
-export function DateInputBR({ value, onChange, placeholder, className = '' }: DateInputBRProps) {
+export function DateInputBR({ value, onChange, placeholder, min, max, className = '' }: DateInputBRProps) {
   const [displayValue, setDisplayValue] = useState(() => isoToDisplay(value));
   const [isFocused, setIsFocused] = useState(false);
   const hiddenDateRef = useRef<HTMLInputElement>(null);
@@ -133,6 +133,7 @@ export function DateInputBR({ value, onChange, placeholder, className = '' }: Da
         onClick={handleCalendarClick}
         className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-primary transition-colors"
         tabIndex={-1}
+        aria-label="Abrir calendário"
       >
         <Calendar className="h-4 w-4" />
       </button>
@@ -141,6 +142,8 @@ export function DateInputBR({ value, onChange, placeholder, className = '' }: Da
         ref={hiddenDateRef}
         type="date"
         value={value}
+        min={min}
+        max={max}
         onChange={handleNativeDateChange}
         className="sr-only"
         tabIndex={-1}

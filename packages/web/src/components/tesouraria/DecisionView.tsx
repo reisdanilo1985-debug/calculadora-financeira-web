@@ -7,6 +7,7 @@
 
 import React, { useState } from 'react';
 import { ChevronDown, BookOpen, Microscope, AlertTriangle } from 'lucide-react';
+import { formatDate } from '@/lib/utils';
 import { PremissasSnapshot } from '@/lib/api';
 import { ResultView } from './ResultView';
 import { decidir, EIXO_LABEL, Sinal } from './decision';
@@ -152,7 +153,7 @@ export function DecisionView({ nome, body, result, snapshot }: Props) {
           )}
           {snapshot && (
             <p className="text-[10px] text-muted-foreground/60">
-              Premissas de {snapshot.dataRef} — fontes por premissa no selo acima. Taxas internas em fração decimal
+              Premissas de {formatDate(snapshot.dataRef)} — fontes por premissa no selo acima. Taxas internas em fração decimal
               (convenção do motor); percentuais convertidos na exibição.
             </p>
           )}

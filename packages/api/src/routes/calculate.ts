@@ -199,6 +199,12 @@ export function normalizeSpread<T extends { mode: 'percentage' | 'additive'; val
 }
 
 /** Corpo 422 para período com dias/meses sem dado oficial nem premissa */
+/** Data em dd/mm/aaaa para textos exibidos ao usuário (campos de dados seguem ISO). */
+function dataBrMensagem(d?: Date): string | undefined {
+  if (!d || isNaN(d.getTime())) return undefined;
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+}
+
 export function missingDataResponse(error: MissingIndexDataError, endDate: Date, indexData: any[], indexType?: string) {
   const requiredFrom = getPremisesRequiredFrom(endDate, indexData, indexType);
   return {
@@ -336,7 +342,7 @@ calculateRouter.post('/', async (req: Request, res: Response) => {
           premisesRequiredFrom: premisesRequiredFrom.toISOString(),
           lastAvailableRate: indexData[indexData.length - 1]?.value ?? null,
           lastAvailableDate: indexData[indexData.length - 1]?.date?.toISOString() ?? null,
-          message: `Dados disponíveis até ${indexData[indexData.length - 1]?.date?.toISOString() ?? 'N/A'}.`,
+          message: `Dados disponíveis até ${dataBrMensagem(indexData[indexData.length - 1]?.date) ?? 'N/A'}.`,
         });
       }
     }

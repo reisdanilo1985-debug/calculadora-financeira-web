@@ -987,11 +987,10 @@ export function CalculatorForm({ onResult }: CalculatorFormProps) {
                 <AccordionContent id="carencia" className="px-3 pb-3 space-y-3">
                   <div className="space-y-1.5">
                     <Label className="text-sm">Data de Término da Carência</Label>
-                    <Input
-                      type="date"
+                    <DateInputBR
                       value={gracePeriodEndDate}
                       min={startDate} max={endDate}
-                      onChange={e => setGracePeriodEndDate(e.target.value)}
+                      onChange={setGracePeriodEndDate}
                     />
                   </div>
                   <div className="space-y-1.5">

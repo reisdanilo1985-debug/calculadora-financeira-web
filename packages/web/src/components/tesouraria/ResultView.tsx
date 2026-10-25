@@ -1,4 +1,5 @@
 import React from 'react';
+import { exibirSeData } from '@/lib/utils';
 
 /** Formata número no padrão pt-BR com até 6 casas; milhares para valores grandes. */
 function fmt(n: number): string {
@@ -47,7 +48,7 @@ function Table({ rows }: { rows: Record<string, any>[] }) {
             <tr key={i} className="border-b border-white/5 hover:bg-white/5">
               {cols.map(c => (
                 <td key={c} className="px-3 py-1.5 whitespace-nowrap">
-                  {typeof r[c] === 'number' ? fmt(r[c]) : String(r[c])}
+                  {typeof r[c] === 'number' ? fmt(r[c]) : exibirSeData(String(r[c]))}
                 </td>
               ))}
             </tr>
@@ -104,7 +105,7 @@ export function ResultView({ result }: { result: any }) {
             <div key={k} className="rounded-md border border-white/5 bg-white/5 px-3 py-2">
               <div className="text-[11px] text-muted-foreground">{humanize(k)}</div>
               <div className="text-sm font-semibold tabular-nums text-foreground mt-0.5">
-                {typeof v === 'number' ? fmt(v) : String(v)}
+                {typeof v === 'number' ? fmt(v) : exibirSeData(String(v))}
               </div>
             </div>
           ))}

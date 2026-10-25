@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { datasNoTextoBR } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 import { 
   getWaccSetores, 
@@ -231,7 +232,7 @@ export function WaccForm({ onCalculate, loading }: WaccFormProps) {
                   </TooltipTrigger>
                   <TooltipContent side="right" className="max-w-xs text-[10px]">
                     {referenciaAtual
-                      ? `Referência ${formData.moeda} nominal ${fmtPct(referenciaAtual.rf)} (data-base ${referenciaAtual.dataBase ?? '—'}). ${referenciaAtual.observacao ?? ''}`
+                      ? `Referência ${formData.moeda} nominal ${fmtPct(referenciaAtual.rf)} (data-base ${referenciaAtual.dataBase ? datasNoTextoBR(referenciaAtual.dataBase) : '—'}). ${referenciaAtual.observacao ?? ''}`
                       : `Informe a Rf em ${formData.moeda} (mesma moeda e regime do cálculo).`}
                   </TooltipContent>
                 </Tooltip>
@@ -261,7 +262,7 @@ export function WaccForm({ onCalculate, loading }: WaccFormProps) {
                   </TooltipTrigger>
                   <TooltipContent side="right" className="max-w-xs text-[10px]">
                     {referenciaAtual
-                      ? `Prêmio de mercado maduro (Damodaran, ${referenciaAtual.dataBase ?? 'data-base não informada'}): ${fmtPct(referenciaAtual.erp)}. O risco-país entra à parte (CRP).`
+                      ? `Prêmio de mercado maduro (Damodaran, ${referenciaAtual.dataBase ? datasNoTextoBR(referenciaAtual.dataBase) : 'data-base não informada'}): ${fmtPct(referenciaAtual.erp)}. O risco-país entra à parte (CRP).`
                       : 'Prêmio pelo risco de mercado maduro; o risco-país entra à parte (CRP).'}
                   </TooltipContent>
                 </Tooltip>
@@ -314,7 +315,7 @@ export function WaccForm({ onCalculate, loading }: WaccFormProps) {
                     <HelpCircle className="h-3 w-3 cursor-help text-muted-foreground/60" />
                   </TooltipTrigger>
                   <TooltipContent side="right" className="max-w-xs text-[10px]">
-                    Country Risk Premium (Damodaran{dataBaseCRP ? `, ${dataBaseCRP}` : ''}). Sugerido automaticamente ao selecionar o país.
+                    Country Risk Premium (Damodaran{dataBaseCRP ? `, ${datasNoTextoBR(dataBaseCRP)}` : ''}). Sugerido automaticamente ao selecionar o país.
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -445,7 +446,7 @@ export function WaccForm({ onCalculate, loading }: WaccFormProps) {
           {loading ? 'Calculando...' : 'Calcular WACC / CMPC'}
         </Button>
         <p className="text-[10px] text-center text-muted-foreground mt-3 uppercase tracking-tighter opacity-60">
-          Fundamentação: Metodologia Aswath Damodaran (NYU Stern){referenciaAtual?.dataBase ? ` · Dados ${referenciaAtual.dataBase}` : ''}
+          Fundamentação: Metodologia Aswath Damodaran (NYU Stern){referenciaAtual?.dataBase ? ` · Dados ${datasNoTextoBR(referenciaAtual.dataBase)}` : ''}
         </p>
       </div>
     </form>

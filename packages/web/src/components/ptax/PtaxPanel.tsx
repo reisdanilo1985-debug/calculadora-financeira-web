@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Download, Landmark, AlertCircle, HelpCircle, X, FileSpreadsheet, BookOpen } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { DateInputBR } from '@/components/ui/date-input-br';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { getPtaxSummary, PtaxSummaryData } from '@/lib/api';
@@ -260,7 +261,7 @@ export function PtaxPanel() {
     if (!summary) return [];
     return summary.quotes.map(q => ({
       date: diaCotacao(q).split('-').reverse().slice(0, 2).join('/'),
-      fullDate: q.date,
+      fullDate: diaCotacao(q),
       compra: q.buyRate,
       venda: q.sellRate
     }));
@@ -324,11 +325,11 @@ export function PtaxPanel() {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Data Inicial</Label>
-              <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+              <DateInputBR value={startDate} max={endDate} onChange={setStartDate} />
             </div>
             <div className="space-y-1.5">
               <Label>Data Final</Label>
-              <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+              <DateInputBR value={endDate} min={startDate} onChange={setEndDate} />
             </div>
           </div>
 
@@ -583,7 +584,11 @@ export function PtaxPanel() {
                         />
                         <Tooltip 
                           contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px' }}
-                          formatter={(value: number, name: string) => [`R$ ${value.toFixed(4)}`, name === 'compra' ? 'Compra' : 'Venda']}
+                          formatter={(value: number, name: string) => [`R$ ${value.toFixed(4)}`, name.toLowerCase() === 'compra' ? 'Compra' : 'Venda']}
+                          labelFormatter={(label: string, payload: ReadonlyArray<{ payload?: { fullDate?: string } }>) => {
+                            const bruto = payload?.[0]?.payload?.fullDate;
+                            return bruto ? dataBR(bruto) : label;
+                          }}
                           labelStyle={{ color: 'hsl(var(--foreground))', fontWeight: 600, marginBottom: '4px' }}
                         />
                         <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />

@@ -5,6 +5,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DateInputBR } from '@/components/ui/date-input-br';
 import { Label } from '@/components/ui/label';
 import { FuturePremise } from '@/components/calculator/FuturePremisesModal';
 import { formatDate } from '@/lib/utils';
@@ -86,21 +87,19 @@ function ScenarioPremisesSection({ info, calcEndDate, onUpdate }: ScenarioPremis
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1">
             <Label className="text-xs">De</Label>
-            <Input
-              type="date"
+            <DateInputBR
               className="h-8 text-xs"
               value={form.startDate}
-              onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))}
+              onChange={iso => setForm(f => ({ ...f, startDate: iso }))}
             />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Até</Label>
-            <Input
-              type="date"
+            <DateInputBR
               className="h-8 text-xs"
               value={form.endDate}
-              max={calcEndDate}
-              onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))}
+              max={calcEndDate?.slice(0, 10)}
+              onChange={iso => setForm(f => ({ ...f, endDate: iso }))}
             />
           </div>
           <div className="col-span-2 space-y-1">

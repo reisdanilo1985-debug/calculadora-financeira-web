@@ -4,6 +4,7 @@ import { NumericFormat } from 'react-number-format';
 import { CompareRequest, CompareScenarioInput, runComparison, CompareResult } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { DateInputBR } from '@/components/ui/date-input-br';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import {
@@ -309,11 +310,11 @@ export function ComparadorForm({ onResult }: ComparadorFormProps) {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Data Inicial</Label>
-              <Input type="date" value={startDate} max={endDate} onChange={e => setStartDate(e.target.value)} />
+              <DateInputBR value={startDate} max={endDate} onChange={setStartDate} />
             </div>
             <div className="space-y-1.5">
               <Label>Data Final</Label>
-              <Input type="date" value={endDate} min={startDate} onChange={e => setEndDate(e.target.value)} />
+              <DateInputBR value={endDate} min={startDate} onChange={setEndDate} />
             </div>
           </div>
 

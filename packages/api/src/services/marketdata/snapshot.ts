@@ -196,7 +196,8 @@ async function buildSnapshot(
     fonte: 'ANBIMA ETTJ' | 'Tesouro Transparente',
     r: { curvas: { diPre: typeof curvas.diPre; real: typeof curvas.real; dataBase: Date }; live: boolean }
   ) => {
-    const base = r.curvas.dataBase.toISOString().slice(0, 10);
+    // Rótulo exibido ao usuário: data-base em dd/mm/aaaa
+    const base = r.curvas.dataBase.toISOString().slice(0, 10).split('-').reverse().join('/');
     const rotulo = `${fonte} · ${base}`;
     curvas.diPre = r.curvas.diPre;
     provDiPre = r.live ? ok(rotulo) : stale(fonte, 'LKG');

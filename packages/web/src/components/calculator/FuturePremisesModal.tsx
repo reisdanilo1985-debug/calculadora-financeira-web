@@ -5,6 +5,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DateInputBR } from '@/components/ui/date-input-br';
 import { Label } from '@/components/ui/label';
 import { formatDate } from '@/lib/utils';
 
@@ -114,19 +115,17 @@ export function FuturePremisesModal({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>De</Label>
-              <Input
-                type="date"
+              <DateInputBR
                 value={form.startDate}
-                onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))}
+                onChange={iso => setForm(f => ({ ...f, startDate: iso }))}
               />
             </div>
             <div className="space-y-1.5">
               <Label>Até</Label>
-              <Input
-                type="date"
+              <DateInputBR
                 value={form.endDate}
-                max={calcEndDate}
-                onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))}
+                max={calcEndDate?.slice(0, 10)}
+                onChange={iso => setForm(f => ({ ...f, endDate: iso }))}
               />
             </div>
             <div className="col-span-2 space-y-1.5">

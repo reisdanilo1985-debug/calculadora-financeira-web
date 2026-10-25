@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Download, TrendingUp, Globe, BarChart3, AlertCircle, ArrowLeftRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { DateInputBR } from '@/components/ui/date-input-br';
+import { formatDate } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { NumericFormat } from 'react-number-format';
@@ -310,11 +312,11 @@ export function ExchangePanel() {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Data Inicial</Label>
-              <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+              <DateInputBR value={startDate} max={endDate} onChange={setStartDate} />
             </div>
             <div className="space-y-1.5">
               <Label>Data Final</Label>
-              <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+              <DateInputBR value={endDate} min={startDate} onChange={setEndDate} />
             </div>
           </div>
 
@@ -452,6 +454,10 @@ export function ExchangePanel() {
                         <Tooltip 
                           contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px' }}
                           formatter={(value: number) => [`R$ ${value.toFixed(4)}`, undefined]}
+                          labelFormatter={(label, payload) => {
+                            const iso = payload?.[0]?.payload?.fullDate;
+                            return iso ? formatDate(iso) : label;
+                          }}
                           labelStyle={{ color: 'hsl(var(--foreground))', fontWeight: 600, marginBottom: '4px' }}
                         />
                         <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
