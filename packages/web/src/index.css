@@ -64,6 +64,23 @@
       min-height: 44px;
     }
   }
+
+  /* ── Modo app (instalado na tela inicial): toque longo não seleciona o layout ── */
+  @media (display-mode: standalone) {
+    html {
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    input,
+    textarea,
+    [contenteditable],
+    table,
+    pre,
+    code {
+      -webkit-user-select: text;
+      user-select: text;
+    }
+  }
   h1, h2, h3, .font-display {
     font-family: 'Manrope', 'Inter', system-ui, sans-serif;
     font-weight: 700;

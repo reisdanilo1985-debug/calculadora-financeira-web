@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { HomePage } from './pages/HomePage';
 import { LandingPage } from './pages/LandingPage';
+import { OfflineBanner } from './components/pwa/OfflineBanner';
+import { UpdateToast } from './components/pwa/UpdateToast';
+
+/** Service worker só existe no build de produção (ou em dev com VITE_PWA_DEV=1). */
+const PWA_ENABLED = import.meta.env.PROD || import.meta.env.VITE_PWA_DEV === '1';
 
 /** Abas válidas do terminal (HomePage). */
 const VALID_TABS = new Set([
@@ -43,9 +48,11 @@ export default function App() {
     window.location.hash = `#/app/${VALID_TABS.has(view) ? view : 'calculadora'}`;
   };
 
-  if (route.page === 'app') {
-    return <HomePage initialTab={route.tab} />;
-  }
-
-  return <LandingPage onNavigate={navigateToApp} />;
+  return (
+    <>
+      {route.page === 'app' ? <HomePage initialTab={route.tab} /> : <LandingPage onNavigate={navigateToApp} />}
+      <OfflineBanner />
+      {PWA_ENABLED && <UpdateToast />}
+    </>
+  );
 }

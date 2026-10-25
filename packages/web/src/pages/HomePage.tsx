@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { BarChart3, Settings, TrendingUp, ShieldCheck, Database, Globe, HelpCircle, X, BarChart2, GitCompare, Menu, Landmark, PiggyBank, Percent, Calculator, CandlestickChart } from 'lucide-react';
+import { BarChart3, TrendingUp, HelpCircle, X, BarChart2, Menu, GitCompare } from 'lucide-react';
+import { NAV_ITEMS } from '@/lib/navItems';
+import { MobileBottomNav, BOTTOM_NAV_HEIGHT } from '@/components/layout/MobileBottomNav';
+import { InstallBanner } from '@/components/pwa/InstallBanner';
 import { CalculatorForm } from '@/components/calculator/CalculatorForm';
 import { ResultsSummary } from '@/components/results/ResultsSummary';
 import { EvolutionChart } from '@/components/results/EvolutionChart';
@@ -19,19 +22,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CalculationResult, CompareResult } from '@/lib/api';
 import { LiveTickerBar } from '@/components/dashboard/LiveTickerBar';
-
-/** Seções da plataforma — dirige a navbar (desktop) e o menu mobile. */
-const NAV_ITEMS: { key: string; label: string; short: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { key: 'calculadora', label: 'Calculadora', short: 'Calc.', icon: Calculator },
-  { key: 'comparador', label: 'Comparador', short: 'Comparar', icon: GitCompare },
-  { key: 'cambio', label: 'Câmbio', short: 'Câmbio', icon: Globe },
-  { key: 'ptax', label: 'PTAX BCB', short: 'PTAX', icon: TrendingUp },
-  { key: 'tesouraria', label: 'Tesouraria', short: 'Tesour.', icon: Landmark },
-  { key: 'opcoes', label: 'Opções', short: 'Opções', icon: CandlestickChart },
-  { key: 'wacc', label: 'WACC', short: 'WACC', icon: Percent },
-  { key: 'aposentadoria', label: 'Aposentadoria', short: 'Aposent.', icon: PiggyBank },
-  { key: 'indices', label: 'Índices / Admin', short: 'Índices', icon: Database },
-];
 
 const HELP_STEPS = [
   { step: '1', text: 'Selecione o indexador de correção (CDI, IPCA, Selic…)' },
@@ -122,15 +112,18 @@ export function HomePage({ initialTab }: HomePageProps) {
   React.useEffect(() => {
     if (initialTab && initialTab !== activeTab) {
       setActiveTab(initialTab);
+      setMobileMenuOpen(false); // ex.: "voltar" do Android com o menu aberto
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTab]);
 
-  // Mantém o hash sincronizado com a aba ativa (deep-linking)
+  // Mantém o hash sincronizado com a aba ativa (deep-linking).
+  // Atribuir ao hash cria uma entrada no histórico: o "voltar" (Android / navegador)
+  // retorna à aba anterior via hashchange → App → initialTab, em vez de sair do app.
   React.useEffect(() => {
     const target = `#/app/${activeTab}`;
     if (window.location.hash !== target) {
-      window.history.replaceState(null, '', target);
+      window.location.hash = target;
     }
   }, [activeTab]);
 
@@ -201,7 +194,7 @@ export function HomePage({ initialTab }: HomePageProps) {
           />
           <nav
             className="absolute right-0 top-0 bottom-0 w-[78%] max-w-xs bg-card border-l border-white/10 shadow-2xl flex flex-col animate-slide-in-right"
-            style={{ paddingTop: 'env(safe-area-inset-top)' }}
+            style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
           >
             <div className="flex items-center justify-between px-4 h-16 border-b border-white/5">
               <span className="flex items-center gap-2 font-bold text-foreground">
@@ -239,6 +232,9 @@ export function HomePage({ initialTab }: HomePageProps) {
 
       {/* ── Espaçador do cabeçalho fixo (ticker 32px + navbar 64px + safe-area) ── */}
       <div className="shrink-0" style={{ height: 'calc(96px + env(safe-area-inset-top))' }} />
+
+      {/* ── Convite de instalação (só celular, fora do modo instalado) ── */}
+      <InstallBanner />
 
       <div className="flex-1 flex flex-col relative z-10 bg-black/20">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
@@ -396,6 +392,10 @@ export function HomePage({ initialTab }: HomePageProps) {
           {' · '}SOFR via <span className="text-primary font-medium">FRED</span>
         </p>
       </footer>
+
+      {/* ── Barra de abas inferior (só celular) + espaçador para o conteúdo não ficar atrás dela ── */}
+      <div className="md:hidden shrink-0" style={{ height: `calc(${BOTTOM_NAV_HEIGHT}px + env(safe-area-inset-bottom))` }} />
+      <MobileBottomNav activeTab={activeTab} onSelect={goTab} onMore={() => setMobileMenuOpen(true)} />
     </div>
   );
 }

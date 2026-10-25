@@ -10,6 +10,7 @@ import { PersonaSection } from '@/components/landing/PersonaSection';
 import { DataSourcesSection } from '@/components/landing/DataSourcesSection';
 import { FinalCTASection } from '@/components/landing/FinalCTASection';
 import { LandingFooter } from '@/components/landing/LandingFooter';
+import { InstallButton } from '@/components/pwa/InstallButton';
 
 const NAV_LINKS = [
   { label: 'Funcionalidades', anchor: 'funcionalidades' },
@@ -58,13 +59,16 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
               ))}
             </nav>
 
-            <button
-              onClick={() => onNavigate('calculadora')}
-              className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-semibold px-4 py-2 rounded-lg transition-all"
-            >
-              Acessar Terminal
-              <ArrowRight className="h-3.5 w-3.5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <InstallButton />
+              <button
+                onClick={() => onNavigate('calculadora')}
+                className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-semibold px-4 py-2 rounded-lg transition-all"
+              >
+                Acessar Terminal
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
         </header>
       </div>

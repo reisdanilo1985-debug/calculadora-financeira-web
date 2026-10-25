@@ -5,14 +5,17 @@ import { ArrowUpRight, ArrowDownRight, Activity } from 'lucide-react';
 export function LiveTickerBar() {
   const [pulse, setPulse] = useState<MarketAsset[]>([]);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     async function load() {
       try {
         const data = await getMarketPulse();
         setPulse(data);
+        setFailed(false);
       } catch (err) {
         console.error('Failed to load market pulse', err);
+        setFailed(true);
       } finally {
         setLoading(false);
       }
@@ -22,10 +25,15 @@ export function LiveTickerBar() {
     return () => clearInterval(int);
   }, []);
 
-  if (loading || pulse.length === 0) {
+  if (pulse.length === 0) {
+    // Mesma altura (32px) em todos os estados: o espaçador do cabeçalho fixo depende dela
     return (
       <div className="h-8 bg-black/50 border-b border-white/10 flex items-center justify-center">
-        <Activity className="h-4 w-4 text-primary animate-pulse" />
+        {!loading && failed ? (
+          <span className="text-[11px] font-mono text-muted-foreground">Cotações indisponíveis</span>
+        ) : (
+          <Activity className="h-4 w-4 text-primary animate-pulse" />
+        )}
       </div>
     );
   }
